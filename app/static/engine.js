@@ -16,6 +16,9 @@ export class ScoringError extends Error {
   }
 }
 
+/** Shortest to longest; a question is asked in the length of its length_rank and every longer one. */
+export const LENGTHS = ["short", "medium", "long"];
+
 const COMPARE_DECIMALS = 9;
 const OUTPUT_DECIMALS = 10;
 
@@ -137,11 +140,12 @@ export function prepare(data) {
 // Evaluation
 // ---------------------------------------------------------------------------------------------------------------
 
-function resolveAnswers(c, answers) {
+function resolveAnswers(c, answers, active, length) {
   const picks = [];
   for (const [qid, given] of Object.entries(answers || {})) {
     const qi = c.qIndex.get(qid);
     if (qi === undefined) throw new ScoringError("unknown_question", `Unknown or disabled question '${qid}'.`);
+    if (!active.includes(qi)) throw new ScoringError("unknown_question", `Question '${qid}' is not part of the ${length} quiz.`);
     const q = c.questions[qi];
     let aid = String(given);
     if (q.type === "pick_two") {                                   // accept either order: 'c+a' is 'a+c'
@@ -163,10 +167,14 @@ function order(n, score, tie) {
 }
 
 /** Score a complete set of answers (question id -> answer id). Mirrors scoring.evaluate(include_explanation=False). */
-export function evaluate(c, answers, { allowPartial = false } = {}) {
-  const picks = resolveAnswers(c, answers);
+export function evaluate(c, answers, { allowPartial = false, length = "long" } = {}) {
+  const rank = LENGTHS.indexOf(length);
+  if (rank < 0) throw new ScoringError("scoring_error", `Unknown quiz length '${length}'.`);
+  const active = c.questions.map((q, i) => i).filter((i) => c.questions[i].length_rank <= rank);
+  if (!active.length) throw new ScoringError("scoring_error", `The ${length} quiz has no questions.`);
+  const picks = resolveAnswers(c, answers, active, length);
   const given = answers || {};
-  const missing = c.questions.filter((q) => !Object.prototype.hasOwnProperty.call(given, q.id)).map((q) => q.id);
+  const missing = active.map((i) => c.questions[i].id).filter((id) => !Object.prototype.hasOwnProperty.call(given, id));
   if (!picks.length || (missing.length && !allowPartial)) {
     throw new ScoringError("incomplete_assessment",
       missing.length ? `${missing.length} question(s) unanswered: ${missing.join(", ")}` : "At least one answer is required.", { missing });
@@ -270,7 +278,10 @@ export function evaluate(c, answers, { allowPartial = false } = {}) {
     + `your adjusted scores in those traits were ${scored}.`;
 
   const gap = classTotals[classOrder[0]] - classTotals[classOrder[1]];
-  const label = r(gap) >= c.strong_margin ? "Strong lean" : r(gap) >= c.moderate_margin ? "Clear lean" : "Close call";
+  // the margins scale with the square root of the share of questions asked (1 for the full quiz), as scoring.margin_scale
+  const scale = Math.sqrt(active.length / c.questions.length);
+  const strongMargin = c.strong_margin * scale, moderateMargin = c.moderate_margin * scale;
+  const label = r(gap) >= strongMargin ? "Strong lean" : r(gap) >= moderateMargin ? "Clear lean" : "Close call";
 
   const result = {
     primary_class: classRows[0],
@@ -285,8 +296,8 @@ export function evaluate(c, answers, { allowPartial = false } = {}) {
     confidence: {
       label,
       class_gap: o(gap),
-      strong_margin: c.strong_margin,
-      moderate_margin: c.moderate_margin,
+      strong_margin: strongMargin,
+      moderate_margin: moderateMargin,
       note: "Heuristic descriptor based on the gap between the top two class scores "
         + "and configurable margins. It is not a statistical estimate or a probability.",
     },
@@ -310,11 +321,12 @@ export function evaluate(c, answers, { allowPartial = false } = {}) {
       config_revision: c.revision,
       algorithm_version: c.algorithm_version,
       answered_questions: picks.length,
-      total_questions: c.questions.length,
+      total_questions: active.length,
       complete: !missing.length,
       provisional: !!missing.length,
       missing_questions: missing,
       spec_weight_multiplier: c.spec_multiplier,
+      quiz_length: length,
       scores_are_probabilities: false,
       note: "Scores are relative compatibility indicators, not probabilities. "
         + "Confidence labels are heuristics, not statistical estimates.",

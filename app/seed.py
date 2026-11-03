@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from .drafts import apply_drafts
 from .spec_guides import GUIDE_NOTE, GUIDES
-from .seed_tuning import ORIGINAL_CLASS_PAIRS, SPEC_WEIGHTS, TYPE_CHANGES
+from .seed_tuning import MIN_LENGTH, ORIGINAL_CLASS_PAIRS, SPEC_WEIGHTS, TYPE_CHANGES
 from .models import (
     Answer,
     Build,
@@ -552,6 +552,8 @@ def build_default_config(include_drafts: bool = True) -> Config:
             if (q.id, a.id) in ORIGINAL_CLASS_PAIRS:
                 a.class_weights = _weights(ORIGINAL_CLASS_PAIRS[(q.id, a.id)])
             a.spec_weights = _spec_weights(SPEC_WEIGHTS.get((q.id, a.id), {}).items())
+    for q in by_id.values():
+        q.min_length = MIN_LENGTH.get(q.id, "long")
     questions = [by_id[qid] for qid in QUESTION_ORDER]
     builds = [
         Build(
@@ -576,7 +578,7 @@ def build_default_config(include_drafts: bool = True) -> Config:
         quiz=QuizMeta(
             id="wow-forever-oracle",
             title="The Stars Have Chosen",
-            subtitle="A thirty-question reading of your temperament for World of Warcraft: Forever",
+            subtitle="A reading of your temperament for World of Warcraft: Forever",
             expected_question_count=30,
             answers_per_question=4,
         ),

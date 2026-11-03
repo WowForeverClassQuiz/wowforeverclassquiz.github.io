@@ -1,8 +1,8 @@
 # World of Warcraft: Forever - Character Oracle
 
 A personality quiz that recommends a **class, specialization and talent build** for
-*World of Warcraft: Forever*. Thirty indirect questions of five kinds (pick one, rate 1-10, pick two, rank four, spend six points) are
-scored with a transparent, deterministic algorithm. It comes in two editions that share one scoring engine:
+*World of Warcraft: Forever*. Participants choose a **short (10), medium (20) or long (30)** reading; the questions are of five kinds (pick one, rate 1-10, pick two,
+rank four, spend six points) and are scored with a transparent, deterministic algorithm. It comes in two editions that share one scoring engine:
 
 * **Local app** (run with Python, below): the quiz plus an administrative dashboard. Nothing leaves your machine.
   * *Participant interface* (`/`): the quiz, a result reveal, and a build card.
@@ -191,7 +191,14 @@ Close call" is a heuristic based on the gap between the top two classes, not a s
    nothing to the second term. Only the winning class's specializations decide the primary result.
 4. **Alternatives.** Second-best class and its best specialization, plus the second-best specialization
    in the winning class.
-5. **Ties** are deterministic: class order Druid, Hunter, Mage, Paladin, Priest, Rogue, Shaman, Warlock,
+5. **Quiz lengths.** Each question has a `min_length` (short, medium or long): the shortest quiz that asks it. The quizzes are nested, so
+   the medium quiz asks the short quiz's 10 questions plus 10 more, and the long quiz asks all 30. Scoring a length uses only that length's
+   questions and is otherwise identical; `POST /evaluate` takes `length` (default `long`), refuses answers to questions the length does not ask
+   and reports the ones it is missing. The confidence margins scale with the square root of the share of questions asked
+   (`sqrt(10/30)` for short), because the gap between the top two classes of random answers grows about that fast; without this a short quiz would
+   be called a "close call" far more often just for being short (a test checks the labels stay comparable across lengths). The "Sharpen it" button on
+   a short or medium result adds the next length's questions and keeps every answer already given.
+6. **Ties** are deterministic: class order Druid, Hunter, Mage, Paladin, Priest, Rogue, Shaman, Warlock,
    Warrior (editable); then specialization order within the class; then trait order. Scores are compared
    after rounding to 9 decimals so floating-point noise never decides a result. Ties used are listed in the explanation.
 
@@ -226,12 +233,12 @@ Pick the lightest level that does the job.
 number of questions is a deliberate edit of that block plus the questions. Choice questions need 2 to 8 answers, pick-two, ranking
 and allocation questions exactly 4, and scale questions exactly the two answers `agree` and `disagree`.
 
-### Balance (algorithm 1.2.0)
+### Balance (algorithm 1.3.0)
 
 The requirement: **every class reachable, and every specialization the recommendation at least 20% of the time within its
-own class when the answers are random.** "Random" here means every question answered uniformly at random over its possible
+own class when the answers are random, at every quiz length.** "Random" here means every question answered uniformly at random over its possible
 responses (each of the ten ratings, each answer, each of the six pairs). It is a diagnostic of the scoring rules, not a model of
-real people, who do not answer uniformly. Measured on 100,000 random answer sets (`python tools/balance.py report --n 100000 --seed 4242`; for a ranking or an allocation every one of the 24 or 84 possible responses is equally likely):
+real people, who do not answer uniformly. Measured on 100,000 random answer sets (`python tools/balance.py report --n 100000 --seed 4242`; for a ranking or an allocation every one of the 24 or 84 possible responses is equally likely). The table is the **long** quiz; the short and medium quizzes, measured the same way, are in the next lines:
 
 | Class | Result share | Its specializations' shares within the class |
 |---|---|---|
@@ -245,6 +252,12 @@ real people, who do not answer uniformly. Measured on 100,000 random answer sets
 | Warlock | 11.1% | Affliction 37.4% · Demonology 31.6% · Destruction 31.0% |
 | Warrior | 10.2% | Arms 33.4% · Fury 37.7% · Protection 28.9% |
 
+| Quiz | Questions | Lowest specialization share | Class shares |
+|---|---|---|---|
+| Short | 10 | 25.8% | 10.2% to 12.0% |
+| Medium | 20 | 23.9% | 10.1% to 11.9% |
+| Long | 30 | 23.8% | 9.9% to 13.2% |
+
 The lowest share is 23.8% (Priest Shadow) and the highest 42.8% (Mage Arcane); classes range from 9.9% to 13.2% (an even split is 11.1%).
 `tests/test_balance.py` enforces at least 20% per specialization and 8-15% per class on a fixed seed, and `tests/test_question_types.py`
 checks by search that answers exist for all 27 specializations.
@@ -256,16 +269,20 @@ classes 8.5-14.5%). The fix is data, listed in [app/seed_tuning.py](app/seed_tun
 
 * four original questions changed type with their answers unchanged: Q07 (weather) and Q11 (objects kept for their beauty) became **rankings**, Q09 (a festival) and Q15 (restoring a hard day) became **six-point splits**;
 * eight original answers have a different (primary, secondary) class pair, to even out how often each class is favoured;
-* **direct specialization weights** were added to 42 answers (eight of them answers of original questions) and the multiplier raised from 3.0 to 5.0;
-* the trait weights of the original sixteen questions and the class pairs of the other answers are untouched; five original
-  questions (Q01, Q06, Q08, Q14, Q16) are entirely unchanged.
+* **direct specialization weights** were added to 59 answers (25 of them answers of original questions) and the multiplier raised from 3.0 to 5.0;
+* the trait weights of the original sixteen questions and the class pairs of the other answers are untouched; every original question
+  except Q14 carries at least one of these changes (the answers' wording is never altered, only the questions that changed type were reworded).
+* the short and medium quizzes needed their own tuning: a random choice of 10 or 20 questions leaves some specializations winning under 10% of their
+  class's results, so the questions of each length were chosen (class evenness, a mix of question types, enough answers that suit each
+  specialization) and the direct weights then tuned for all three lengths at once with `tools/tune_weights.py`, never removing a weight and never
+  adding one to an answer that does not suit the specialization (a person reviewed and struck out the proposals that did not fit).
 
 All of it is ordinary configuration: edit or remove any entry in the Question Editor, and use *Simulation > batch* to see the effect.
 To re-measure after your own edits (the tool needs numpy, which the application itself does not):
 
 ```bash
 pip install -r requirements-dev.txt
-python tools/balance.py report                       # shares for the seed
+python tools/balance.py report                       # shares for the seed, at each quiz length (--length short|medium|long)
 python tools/balance.py report --config exported.json    # shares for a configuration you exported
 python tools/balance.py parity                       # confirm the fast simulator agrees with the real engine
 ```
@@ -274,8 +291,8 @@ The class and trait associations behind the questions are playstyle lore, not sc
 no link between personality and class choice. Balanced here means "no specialization is starved", not "predictive".
 
 **Upgrading an existing database.** A database that still holds the *unedited* seed of an earlier release is upgraded to the
-new thirty-question seed (algorithm 1.2.0) automatically at start-up. A database you have edited is never rewritten silently: new columns are added,
-it keeps its sixteen questions and keeps working, and *Admin > Configuration > Reset to original* (a backup is written first)
+current seed (algorithm 1.3.0) automatically at start-up. A database you have edited is never rewritten silently: new columns are added,
+it keeps its questions and keeps working (every question is read as asked in the long quiz only, so such a database offers the one long quiz until you assign lengths in the Question Editor), and *Admin > Configuration > Reset to original* (a backup is written first)
 adopts the new seed.
 
 **Result paragraphs.** The result shows "What the class does": a class paragraph and a specialization paragraph, written in this
@@ -289,14 +306,14 @@ a stale value returns **409** and nothing changes. Errors use `{"detail": {"code
 
 | Endpoint | Purpose |
 |---|---|
-| `GET /quiz` | Questions and answers only, no scoring data |
+| `GET /quiz` | Questions and answers only, no scoring data; also the quiz lengths on offer and which questions each asks |
 | `GET /classes?include_scores&include_builds` | Classes, specializations, roles, build summaries |
-| `POST /evaluate` | Score a complete answer set (`allow_partial`, `include_explanation`, `include_counterfactuals` for admins) |
+| `POST /evaluate` | Score a complete answer set for one quiz `length` (default `long`; `allow_partial`, `include_explanation`, `include_counterfactuals` for admins) |
 | `GET /config`, `/config/default`, `/config/export`, `/config/history[/{rev}]` | Read configuration, original seed, download, revisions |
 | `POST /config/import`, `/config/reset`, `/config/history/{rev}/restore` | Replace configuration (with backup) |
 | `POST /questions/expand` | Expand a (possibly unsaved) question into every possible response with raw and baseline-subtracted weights |
 | `PATCH /questions/{q}/answers/{a}`, `/questions/{q}`, `/classes/{c}/specs/{s}`, `/classes/{c}`, `/traits/{t}`, `/scoring` | Edits. Weight maps you send **replace** the whole map; omitted keys become 0 |
-| `POST /simulate`, `/simulate/batch` | What-if evaluation and random-answer diagnostics (never persisted) |
+| `POST /simulate`, `/simulate/batch` | What-if evaluation and random-answer diagnostics, for any quiz `length` (never persisted) |
 | `GET/POST/PATCH/DELETE /builds...`, `POST /builds/validate`, `POST /builds/{id}/default` | Build records |
 | `GET/PUT /talents/catalog` | Imported talent data |
 | `GET /health` | Version and revision |
@@ -342,10 +359,10 @@ most points and the build's role must fit the specialization.
 pytest
 ```
 
-208 automated tests cover scoring (normalization, ties, determinism, weight edits), the API (privacy of
+238 automated tests cover scoring (normalization, ties, determinism, weight edits), the API (privacy of
 `/quiz`, edits, persistence across restart, simulation purity, revision conflicts, import/export/reset),
 build validation (51 points, ranks, prerequisites, role consistency, verification rules), the draft talent catalog and the 27 draft builds
-with their installer, the guides, drawn talent trees and icons that the result page shows, the **balance** of the seed quiz (`tests/test_balance.py`), and the **static edition**: the JavaScript engine against
+with their installer, the guides, drawn talent trees and icons that the result page shows, the **balance** of the seed quiz at each length (`tests/test_balance.py`), the short/medium/long quizzes (`tests/test_lengths.py`), and the **static edition**: the JavaScript engine against
 the Python engine and the live API (`tests/test_static_parity.py`, needs `node`, skipped without it) and the site builder
 (`tests/test_build_static.py`).
 
@@ -377,7 +394,8 @@ app/repository.py   configuration storage, revisions, backups
 app/static/         browser interface (plain ES modules, no build step); engine.js is the in-browser scoring engine,
                     icons.js maps classes and specializations to their icons, talenttree.js draws a build
 catalog/            draft Forever talent catalog and 27 draft builds, their build scripts, installer and reconciliation ledger
-tools/balance.py    balance report / parity / tuning (developer tool, needs numpy: requirements-dev.txt)
+tools/balance.py    balance report / parity at each quiz length (developer tool, needs numpy: requirements-dev.txt)
+tools/tune_weights.py  suggests direct specialization weights that keep every length balanced
 tools/build_static.py  builds the static website into ./site
 .github/workflows/  GitHub Pages publishing workflow
 tests/              pytest suites and the browser smoke tests

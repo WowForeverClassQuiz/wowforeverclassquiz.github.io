@@ -35,6 +35,9 @@ def test_the_site_has_the_page_the_browser_code_and_the_data(site):
     # the published builds are the draft ones with their trees, not "allocation pending" placeholders
     assert {b["status"] for b in data["builds"].values()} == {"draft"} and all(len(b["trees"]) == 3 for b in data["builds"].values())
     assert all(s["guide"] for cl in data["engine"]["classes"] for s in cl["specs"])
+    # the three quiz lengths travel with the data, and each question says which lengths ask it
+    assert [(l["id"], l["question_count"]) for l in data["quiz"]["lengths"]] == [("short", 10), ("medium", 20), ("long", 30)]
+    assert sorted({q["length_rank"] for q in data["engine"]["questions"]}) == [0, 1, 2]
 
 
 def test_the_page_is_switched_to_static_mode_and_uses_only_relative_paths(site):

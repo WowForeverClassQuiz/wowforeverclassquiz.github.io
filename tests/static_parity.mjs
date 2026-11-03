@@ -1,7 +1,7 @@
 // Runs the browser scoring engine (app/static/engine.js) on a job read from stdin and prints the outcome as JSON.
 // Used by tests/test_static_parity.py, which compares everything against the Python engine.
 //
-//   job = { numbers: [x, ...], sums: [[x, ...], ...], cases: [{ data, answers: [{...}, ...] }, ...] }
+//   job = { numbers: [x, ...], sums: [[x, ...], ...], cases: [{ data, answers: [{...}, ...], length?: "short" | "medium" | "long" }, ...] }
 //
 // engine.js is loaded through a data: URL so node treats it as an ES module without a package.json.
 import { readFileSync } from "node:fs";
@@ -16,11 +16,11 @@ if (job.numbers) {
 }
 if (job.sums) out.sums = job.sums.map((xs) => engine.fsum(xs));
 if (job.cases) {
-  out.cases = job.cases.map(({ data, answers }) => {
+  out.cases = job.cases.map(({ data, answers, length }) => {
     const compiled = engine.prepare(data);
     return answers.map((a) => {
       try {
-        return engine.evaluate(compiled, a);
+        return engine.evaluate(compiled, a, { length: length || "long" });
       } catch (err) {
         if (err instanceof engine.ScoringError) return { error: err.code };
         throw err;

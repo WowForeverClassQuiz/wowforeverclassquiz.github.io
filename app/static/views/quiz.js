@@ -24,9 +24,19 @@ function draw() {
   drawQuestion();
 }
 
-const total = () => state.quiz.questions.length;
-const answered = () => Object.keys(state.answers).length;
-const complete = () => answered() === total() && state.quiz.questions.every((q) => state.answers[q.id]);
+/** The quiz lengths on offer (an older server or configuration may offer none: then the whole quiz is the only length). */
+const lengths = () => state.quiz.lengths || [];
+const currentLength = () => lengths().find((l) => l.id === state.length) || lengths().find((l) => l.id === state.quiz.default_length) || lengths()[lengths().length - 1] || null;
+/** The questions of the chosen length, in quiz order. */
+const questions = () => {
+  const len = currentLength();
+  return len ? len.question_ids.map((id) => state.quiz.questions.find((q) => q.id === id)).filter(Boolean) : state.quiz.questions;
+};
+const total = () => questions().length;
+const answered = () => questions().filter((q) => state.answers[q.id]).length;
+const complete = () => answered() === total();
+const nextLength = () => { const ls = lengths(), i = ls.findIndex((l) => l.id === currentLength()?.id); return i >= 0 && i < ls.length - 1 ? ls[i + 1] : null; };
+const firstUnanswered = () => Math.max(0, questions().findIndex((q) => !state.answers[q.id]));
 
 // ---------------------------------------------------------------------------- intro
 function drawIntro() {
@@ -36,8 +46,9 @@ function drawIntro() {
       h("div", { class: "sigil", "aria-hidden": "true" }, "✦"),
       h("h1", {}, state.quiz.title),
       h("p", { class: "sub" }, state.quiz.subtitle || "A short reading of your temperament."),
+      lengthPicker(),
       h("p", { class: "sub" }, `${total()} questions. There are no right answers; choose whatever draws you first.`),
-      h("button", { class: "btn primary large", type: "button", id: "begin", onclick: () => { state.started = true; if (!resuming) state.index = 0; draw(); } },
+      h("button", { class: "btn primary large", type: "button", id: "begin", onclick: () => { state.started = true; state.length = currentLength()?.id || null; state.index = resuming ? firstUnanswered() : 0; draw(); } },
         resuming ? "Continue your reading" : "Begin"),
       h("p", { class: "muted", style: { marginTop: "28px", fontSize: "0.85rem" } },
         STATIC ? "Your answers are scored right here in your browser. Nothing is sent or stored anywhere."
@@ -45,6 +56,20 @@ function drawIntro() {
     ),
   );
   document.getElementById("begin").focus();
+}
+
+/** Short / medium / long: how many questions to answer. Nothing is chosen for you except the middle one when it exists. */
+function lengthPicker() {
+  const ls = lengths();
+  if (ls.length < 2) return null;
+  const chosen = currentLength();
+  return h("fieldset", { class: "lengths" },
+    h("legend", {}, "How long a reading would you like?"),
+    ls.map((l) => h("label", { class: "length" },
+      h("input", { type: "radio", name: "quiz-length", value: l.id, checked: chosen.id === l.id, onchange: () => { state.length = l.id; draw(); document.querySelector(`input[name="quiz-length"][value="${l.id}"]`)?.focus(); } }),
+      h("span", { class: "length-name" }, l.name),
+      h("span", { class: "length-meta" }, `${l.question_count} questions · about ${l.minutes} min`),
+      h("span", { class: "length-blurb" }, l.description))));
 }
 
 // ---------------------------------------------------------------------------- question
@@ -61,13 +86,15 @@ const TIPS = {
 const EYEBROWS = { choice: "Choose one", scale: "How much do you agree?", pick_two: "Choose two", ranking: "Put them in order", allocation: "Spend your points" };
 
 function drawQuestion() {
-  const q = state.quiz.questions[state.index];
+  const qs = questions();
+  state.index = Math.min(state.index, qs.length - 1);
+  const q = qs[state.index];
   const n = total(), i = state.index;
   const isLast = i === n - 1;
   const chosen = state.answers[q.id];
 
   const dots = h("div", { class: "dots", role: "group", "aria-label": "Jump to a question" },
-    state.quiz.questions.map((qq, k) => h("button", {
+    qs.map((qq, k) => h("button", {
       type: "button", class: `${state.answers[qq.id] ? "done" : ""} ${k === i ? "current" : ""}`,
       "aria-label": `Question ${k + 1}${state.answers[qq.id] ? ", answered" : ", unanswered"}`,
       "aria-current": k === i ? "step" : null,
@@ -218,7 +245,8 @@ function installKeys() {
   document.addEventListener("keydown", (e) => {
     if (!state.started || state.result || !state.quiz || !document.getElementById("view").contains(root) || location.hash.replace(/^#\/?/, "") !== "") return;
     if (e.target.matches("input[type=text], textarea, select") || e.metaKey || e.ctrlKey || e.altKey) return;
-    const q = state.quiz.questions[state.index];
+    const q = questions()[state.index];
+    if (!q) return;
     if (/^[0-9]$/.test(e.key)) {
       if (q.type === "scale") {
         choose(q, e.key === "0" ? String(q.scale_max ?? 10) : e.key);
@@ -247,7 +275,7 @@ function installKeys() {
 // ---------------------------------------------------------------------------- reveal
 async function reveal() {
   if (!complete()) {
-    const first = state.quiz.questions.findIndex((q) => !state.answers[q.id]);
+    const first = firstUnanswered();
     toast(`Question ${first + 1} is still unanswered.`, "warn");
     state.index = first;
     return draw();
@@ -257,7 +285,7 @@ async function reveal() {
     h("h2", {}, "Reading the stars…")));
   try {
     const [result] = await Promise.all([
-      post("/evaluate", { answers: state.answers, include_explanation: false }),
+      post("/evaluate", { answers: Object.fromEntries(questions().map((q) => [q.id, state.answers[q.id]])), length: currentLength()?.id || "long", include_explanation: false }),
       new Promise((r) => setTimeout(r, window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 1300)),
     ]);
     state.result = result;
@@ -273,9 +301,25 @@ async function reveal() {
 
 // ---------------------------------------------------------------------------- result
 function restart() {
-  state.answers = {}; state.picks = {}; state.index = 0; state.started = false; state.result = null;
+  state.answers = {}; state.picks = {}; state.index = 0; state.started = false; state.result = null; state.length = null;
   draw();
   window.scrollTo(0, 0);
+}
+
+function lengthChip(r) {
+  const meta = r.metadata, len = lengths().find((l) => l.id === meta.quiz_length);
+  if (!len || lengths().length < 2) return null;
+  return h("span", { class: "chip", title: "How many questions this reading is based on" }, h("b", {}, `${len.name} reading`), h("i", {}, `${meta.total_questions} questions`));
+}
+
+/** After a shorter reading: answer the extra questions of the next length and keep every answer already given. */
+function refineButton() {
+  const next = nextLength();
+  if (!next) return null;
+  const more = next.question_count - total();
+  return h("button", { class: "btn", type: "button", id: "refine", onclick: () => {
+    state.length = next.id; state.started = true; state.result = null; state.index = firstUnanswered(); draw(); window.scrollTo(0, 0);
+  } }, `Sharpen it: ${more} more question${more === 1 ? "" : "s"} (${next.name.toLowerCase()})`);
 }
 
 function resultText(r) {
@@ -284,7 +328,7 @@ function resultText(r) {
     `${state.quiz.title} - Forever Character Oracle`,
     "",
     `Recommended: ${p.primary_class.name} - ${p.primary_specialization.name} (${roleLabel(p.primary_specialization.role)})`,
-    `Reading strength: ${p.confidence.label} (heuristic, not a probability)`,
+    `Reading strength: ${p.confidence.label} (heuristic, not a probability), from ${r.metadata.total_questions} questions`,
     p.build ? `Build: ${p.build.name} [${p.build.status}]${p.build.tree_distribution_text ? ` ${p.build.tree_distribution_text}` : ""}` : "",
     `Also in the stars: ${a.alternative_class.name} - ${a.alternative_specialization.name}; within ${p.primary_class.name}, ${a.second_specialization_in_primary_class.name}`,
     "",
@@ -315,7 +359,8 @@ function drawResult() {
       h("div", { class: "chips" },
         h("span", { class: "chip" }, h("b", {}, roleLabel(p.primary_specialization.role))),
         h("span", { class: "chip", title: p.confidence.note }, h("b", {}, p.confidence.label), h("i", {}, "heuristic")),
-        p.dominant_traits.map((t) => h("span", { class: "chip" }, h("b", {}, t.name)))),
+        p.dominant_traits.map((t) => h("span", { class: "chip" }, h("b", {}, t.name))),
+        lengthChip(r)),
     ),
     h("div", { class: "card prose" }, h("h3", {}, "Your temperament"), h("p", {}, p.personality_interpretation)),
     overviewCard(p),
@@ -341,6 +386,7 @@ function drawResult() {
     h("div", { class: "row", style: { marginTop: "24px", justifyContent: "center" } },
       h("button", { class: "btn", type: "button", onclick: async () => toast((await copyText(resultText(r))) ? "Result copied to the clipboard." : "Copy failed - select the text manually.", "ok") }, "Copy result"),
       h("button", { class: "btn", type: "button", onclick: () => download("oracle-result.json", JSON.stringify(r, null, 2)) }, "Download JSON"),
+      refineButton(),
       h("button", { class: "btn", type: "button", onclick: () => { state.started = true; state.result = null; state.index = 0; draw(); } }, "Revise my answers"),
       h("button", { class: "btn primary", type: "button", id: "restart", onclick: restart }, "Restart"),
       STATIC ? null : h("a", { class: "btn ghost", href: "#/admin/inspector" }, "Inspect in admin")),

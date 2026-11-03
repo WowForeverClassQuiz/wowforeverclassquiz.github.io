@@ -1,6 +1,7 @@
 """Balance diagnostics and tuning for the quiz (developer tool: needs numpy, which the application itself does not).
 
-    python tools/balance.py report              # class and specialization shares under uniformly random answers
+    python tools/balance.py report              # class and specialization shares under uniformly random answers (all three lengths)
+    python tools/balance.py report --length short
     python tools/balance.py parity              # check this fast simulator against the real scoring engine
     python tools/balance.py tune                # suggest profile strengths that equalize specializations within each class
     python tools/balance.py report --config exported-config.json
@@ -21,7 +22,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app.models import Config  # noqa: E402
-from app.scoring import compile_config, evaluate  # noqa: E402
+from app.scoring import active_questions, compile_config, evaluate  # noqa: E402
 from app.seed import build_default_config  # noqa: E402
 
 MIN_SHARE = 0.20      # the requirement: every specialization wins at least this share of its class's results
@@ -31,15 +32,19 @@ TARGET_SHARE = 0.27   # what the tuner aims above, so sampling noise cannot push
 class Sim:
     """A fixed set of random answer sets and the totals they produce (common random numbers across tuning steps)."""
 
-    def __init__(self, cfg: Config, n: int = 40000, seed: int = 1):
+    def __init__(self, cfg: Config, n: int = 40000, seed: int = 1, length: str = "long"):
         self.cfg = cfg
         self.c = c = compile_config(cfg)
         self.n = n
+        self.length = length
+        self.active = active_questions(c, length)          # the questions that quiz length asks
         rng = np.random.default_rng(seed)
         self.idx = np.stack([rng.integers(0, len(q.answer_ids), size=n) for q in c.questions], axis=1)
         zeros = lambda w: np.zeros((n, w))
         self.class_tot, self.trait_tot, self.spec_direct = zeros(c.n_classes), zeros(c.n_traits), zeros(c.n_specs)
         for k, q in enumerate(c.questions):
+            if k not in self.active:
+                continue
             col = self.idx[:, k]
             self.class_tot += np.asarray(q.class_delta)[col]
             self.trait_tot += np.asarray(q.trait_delta)[col]
@@ -81,7 +86,7 @@ class Sim:
         return {"class": dict(zip(self.c.class_ids, class_share)), "spec": specs}
 
     def answers_for_row(self, i: int) -> dict[str, str]:
-        return {q.id: q.answer_ids[self.idx[i, k]] for k, q in enumerate(self.c.questions)}
+        return {q.id: q.answer_ids[self.idx[i, k]] for k, q in enumerate(self.c.questions) if k in self.active}
 
 
 def print_report(rep: dict, label: str = "") -> bool:
@@ -122,19 +127,19 @@ def tune(cfg: Config, n: int = 40000, seed: int = 11, rounds: int = 6) -> dict[s
     return strengths
 
 
-def parity(cfg: Config, k: int = 300) -> int:
+def parity(cfg: Config, k: int = 300, length: str = "long") -> int:
     """Compare the vectorized winners with the real engine on k random answer sets."""
-    sim = Sim(cfg, n=k, seed=99)
+    sim = Sim(cfg, n=k, seed=99, length=length)
     cw = sim.class_winner()
     bad = 0
     for i in range(k):
-        ev = evaluate(cfg, sim.answers_for_row(i), include_explanation=False)
+        ev = evaluate(cfg, sim.answers_for_row(i), include_explanation=False, length=length)
         ci = int(cw[i])
         rows = np.array([i])
         sw = int(np.argmax(np.round(sim.spec_scores(ci, rows), 9), axis=1)[0])
         ok = ev.result.primary_class.id == sim.c.class_ids[ci] and ev.result.primary_specialization.id == sim.c.classes[ci].specs[sw].id
         bad += not ok
-    print(f"parity: {k - bad}/{k} random answer sets agree with the scoring engine")
+    print(f"parity ({length}): {k - bad}/{k} random answer sets agree with the scoring engine")
     return bad
 
 
@@ -144,14 +149,18 @@ def main(argv=None) -> int:
     ap.add_argument("--config", help="exported configuration JSON (default: the seed)")
     ap.add_argument("--n", type=int, default=40000)
     ap.add_argument("--seed", type=int, default=1)
+    ap.add_argument("--length", choices=["short", "medium", "long", "all"], default="all", help="quiz length to measure (default: all three)")
     args = ap.parse_args(argv)
     cfg = Config.model_validate_json(Path(args.config).read_text()) if args.config else build_default_config()
+    lengths = ["short", "medium", "long"] if args.length == "all" else [args.length]
     if args.command == "parity":
-        return 1 if parity(cfg) else 0
+        return 1 if sum(parity(cfg, length=l) for l in lengths) else 0
     if args.command == "tune":
         print(json.dumps(tune(cfg, n=args.n), indent=1))
         return 0
-    ok = print_report(Sim(cfg, n=args.n, seed=args.seed).report(), f"{args.n:,} random answer sets (seed {args.seed})")
+    ok = True
+    for l in lengths:
+        ok &= print_report(Sim(cfg, n=args.n, seed=args.seed, length=l).report(), f"{l}: {args.n:,} random answer sets (seed {args.seed})")
     return 0 if ok else 1
 
 

@@ -41,6 +41,46 @@
 
   // ---- answer every question through the real controls -------------------------------------------------------------
   location.hash = "#/"; await sleep(300);
+  // ---- 0. the three quiz lengths: pick, answer, read the result, then sharpen it with the extra questions -----------------------
+  const byId = Object.fromEntries(quiz.questions.map((q) => [q.id, q]));
+  const lengthOf = Object.fromEntries(quiz.lengths.map((l) => [l.id, l]));
+  const answerQuestions = async (ids) => {
+    for (let k = 0; k < ids.length; k++) {
+      document.querySelectorAll(".dots button")[k].click(); await sleep(20);
+      await respond(byId[ids[k]].type, ANSWERS[ids[k]]);
+    }
+  };
+  const picked = () => document.querySelector('input[name="quiz-length"]:checked')?.value;
+  check("the intro offers short, medium and long, with medium chosen first",
+    [...document.querySelectorAll('input[name="quiz-length"]')].map((i) => i.value).join() === "short,medium,long" && picked() === "medium", picked());
+  check("each option says how many questions it has", ["10 questions", "20 questions", "30 questions"].every((t) => document.querySelector(".lengths").innerText.includes(t)));
+  check("the intro line counts the chosen length's questions", /20 questions\. There are no right answers/.test(document.getElementById("view").innerText));
+  document.querySelector('input[name="quiz-length"][value="short"]').click(); await sleep(100);
+  document.getElementById("begin").click(); await sleep(100);
+  check("the short quiz has ten questions", document.querySelectorAll(".dots button").length === 10 && /Question 1 of 10/.test(document.getElementById("view").innerText));
+  await answerQuestions(lengthOf.short.question_ids);
+  document.getElementById("reveal").click(); await sleep(2000);
+  let page = document.getElementById("view").innerText;
+  check("the short reading says it is short and rests on ten questions", /Short reading/.test(page) && /10 questions/.test(page));
+  check("the short result offers ten more questions", !!document.getElementById("refine") && /10 more questions/.test(document.getElementById("refine").textContent));
+  document.getElementById("refine").click(); await sleep(150);
+  check("sharpening keeps the ten answers and asks ten more", document.querySelectorAll(".dots button").length === 20 && document.querySelectorAll(".dots button.done").length === 10 &&
+    /Question 1 of 20/.test(document.getElementById("view").innerText) === false);
+  const rest = lengthOf.medium.question_ids.filter((id) => !lengthOf.short.question_ids.includes(id));
+  for (const id of rest) {
+    const k = lengthOf.medium.question_ids.indexOf(id);
+    document.querySelectorAll(".dots button")[k].click(); await sleep(20);
+    await respond(byId[id].type, ANSWERS[id]);
+  }
+  document.querySelectorAll(".dots button")[lengthOf.medium.question_ids.length - 1].click(); await sleep(50);      // Reveal sits on the last question
+  document.getElementById("reveal").click(); await sleep(2000);
+  page = document.getElementById("view").innerText;
+  check("the sharpened result is a medium reading on twenty questions", /Medium reading/.test(page) && /20 questions/.test(page));
+  check("a medium result offers ten more", /10 more questions/.test(document.getElementById("refine")?.textContent || ""));
+  document.getElementById("restart").click(); await sleep(100);
+  check("restarting offers the lengths again", picked() === "medium");
+  document.querySelector('input[name="quiz-length"][value="long"]').click(); await sleep(100);
+
   document.getElementById("begin").click(); await sleep(100);
   for (let k = 0; k < quiz.questions.length; k++) {
     const q = quiz.questions[k];

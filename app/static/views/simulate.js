@@ -11,6 +11,8 @@ const specOverrides = [];  // {class_id, specialization_id, text}
 const full = (ids, sparse) => Object.fromEntries(ids.map((i) => [i, sparse[i] ?? 0]));
 const specKeys = () => cfg.classes.flatMap((c) => c.specializations.map((s) => `${c.id}/${s.id}`));
 
+let lengthSel = null;   // the quiz-length menu of the run panel
+
 export async function render(container) {
   root = container;
   cfg = await ensureConfig(true);
@@ -39,6 +41,7 @@ export async function render(container) {
 
   const count = h("input", { type: "number", min: "100", max: "20000", step: "500", value: "5000", "aria-label": "Number of random answer sets" });
   const seed = h("input", { type: "number", step: "1", placeholder: "random", "aria-label": "Random seed (optional)" });
+  lengthSel = h("select", { "aria-label": "Quiz length" }, [["long", "Long quiz"], ["medium", "Medium quiz"], ["short", "Short quiz"]].map(([v, t]) => h("option", { value: v }, t)));
 
   clear(root).append(
     h("div", { class: "page-head" }, h("div", {}, h("h1", {}, "Simulation"),
@@ -69,6 +72,7 @@ export async function render(container) {
         h("span", { class: "muted" }, "or"),
         h("label", { class: "field", style: { width: "130px" } }, "Random sets", count),
         h("label", { class: "field", style: { width: "130px" } }, "Seed", seed),
+        h("label", { class: "field", style: { width: "150px" } }, "Quiz length", lengthSel),
         h("button", { class: "btn", type: "button", style: { alignSelf: "end" }, onclick: () => runBatch(+count.value, seed.value === "" ? null : +seed.value) }, "Run batch diagnostic")),
       h("p", { class: "muted", style: { fontSize: "0.85rem", marginTop: "10px" } }, "A batch scores uniformly random answer sets to reveal systematic bias. Frequencies are diagnostics of the scoring rules, not population probabilities.")),
     resultBox,
@@ -156,7 +160,9 @@ function payloadOverrides() {
 async function runCompare() {
   if (!Object.keys(state.adminAnswers).length) { toast("Choose at least one answer first.", "warn"); return; }
   try {
-    const body = { answers: state.adminAnswers, ...payloadOverrides() };
+    const rank = { short: 0, medium: 1, long: 2 }, length = lengthSel.value;
+    const asked = new Set(cfg.questions.filter((q) => q.enabled && rank[q.min_length || "long"] <= rank[length]).map((q) => q.id));   // only this length's questions
+    const body = { answers: Object.fromEntries(Object.entries(state.adminAnswers).filter(([id]) => asked.has(id))), length, ...payloadOverrides() };
     clear(resultBox).append(h("p", { class: "muted" }, "Evaluating…"));
     const sim = await post("/simulate", body);
     clear(resultBox).append(h("div", { class: "card" }, h("h3", {}, "Saved vs simulated"),
@@ -168,7 +174,7 @@ async function runCompare() {
 async function runBatch(count, seed) {
   if (!Number.isInteger(count) || count < 1 || count > 20000) { toast("Choose between 1 and 20,000 random sets.", "warn"); return; }
   try {
-    const body = { count, ...(seed !== null && Number.isFinite(seed) ? { seed } : {}), ...payloadOverrides() };
+    const body = { count, length: lengthSel.value, ...(seed !== null && Number.isFinite(seed) ? { seed } : {}), ...payloadOverrides() };
     clear(resultBox).append(h("p", { class: "muted" }, `Scoring ${count.toLocaleString()} random answer sets…`));
     const batch = await post("/simulate/batch", body);
     clear(resultBox).append(h("div", { class: "card" }, h("h3", {}, "Batch diagnostic"), batchView(batch)));

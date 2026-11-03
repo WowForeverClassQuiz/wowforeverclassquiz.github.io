@@ -128,7 +128,7 @@ def test_config_endpoint_returns_complete_scoring_data(client):
         "text": "The conservatory, filled with plants from distant countries.",
         "class_weights": {"druid": 2.0, "hunter": 1.0},
         "trait_weights": {"wild": 2.0, "healer": 1.0},
-        "spec_weights": {},
+        "spec_weights": {"druid/restoration": 2.0},
     }
     scale = next(q for q in cfg["questions"] if q["id"] == "q17")
     assert scale["type"] == "scale" and [a["id"] for a in scale["answers"]] == ["agree", "disagree"]

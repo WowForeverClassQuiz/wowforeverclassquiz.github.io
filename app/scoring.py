@@ -35,6 +35,11 @@ vector; the baseline is always the mean over that question's responses:
   allocation one response per way of spending six points over the four answers (id '2-0-3-1', 84 in all); an answer
             given p points counts p / 3.
 
+Quiz lengths. A question's ``min_length`` (short, medium or long) is the shortest quiz that asks it, and longer quizzes ask it
+too, so the quizzes are nested. Scoring a length uses only that length's questions; the arithmetic is otherwise unchanged. The
+confidence margins scale with the square root of the share of questions asked (the gap between the top two classes of random answers
+grows about that fast), so a short quiz is not called a "close call" merely for being short.
+
 Only the winning class's specializations decide the primary result. Ties are broken
 deterministically (class tie-break order, then specialization order, then trait order).
 """
@@ -43,7 +48,7 @@ from __future__ import annotations
 import random
 import itertools
 from dataclasses import dataclass
-from math import fsum
+from math import fsum, sqrt
 from typing import Optional, Sequence
 
 from .models import (
@@ -77,6 +82,7 @@ from .models import (
     TieBreak,
     TraitScore,
     ALLOCATION_POINTS,
+    LENGTHS,
     SCALE_MAX,
     SCALE_MIN,
 )
@@ -146,6 +152,7 @@ class CQuestion:
     id: str
     text: str
     type: str
+    length_rank: int  # position of min_length in LENGTHS: 0 short, 1 medium, 2 long
     item_ids: tuple[str, ...]  # the selectable answers as authored (pick_two needs them to parse 'a+c')
     answer_ids: tuple[str, ...]  # every possible RESPONSE id (answers, answer pairs, or '1'..'10')
     answer_texts: tuple[str, ...]
@@ -214,6 +221,22 @@ class Compiled:
         return len(self.trait_ids)
 
 
+def active_questions(c: Compiled, length: str = "long") -> tuple[int, ...]:
+    """Indices of the questions a quiz of this length asks, in quiz order."""
+    if length not in LENGTHS:
+        raise ScoringError(f"Unknown quiz length '{length}'.")
+    rank = LENGTHS.index(length)
+    active = tuple(i for i, q in enumerate(c.questions) if q.length_rank <= rank)
+    if not active:
+        raise ScoringError(f"The {length} quiz has no questions.")
+    return active
+
+
+def margin_scale(c: Compiled, active: Sequence[int]) -> float:
+    """Factor applied to the confidence margins: sqrt of the share of the quiz's questions that are asked (1.0 for the full quiz)."""
+    return sqrt(len(active) / len(c.questions))
+
+
 def compile_config(config: Config) -> Compiled:
     class_ids = tuple(c.id for c in config.classes)
     trait_ids = tuple(t.id for t in config.traits)
@@ -245,6 +268,7 @@ def compile_config(config: Config) -> Compiled:
                 id=q.id,
                 text=q.text,
                 type=q.type,
+                length_rank=LENGTHS.index(q.min_length),
                 item_ids=tuple(a.id for a in q.answers),
                 answer_ids=tuple(r[0] for r in table),
                 answer_texts=tuple(r[1] for r in table),
@@ -388,12 +412,14 @@ def _response_table(q: Question) -> list[tuple[str, str, dict, dict, dict]]:
 Picks = list[tuple[int, int]]  # (question index, answer index), sorted by question
 
 
-def resolve_answers(c: Compiled, answers: dict[str, str]) -> Picks:
+def resolve_answers(c: Compiled, answers: dict[str, str], active: Optional[Sequence[int]] = None, length: str = "long") -> Picks:
     picks: Picks = []
     for qid, aid in answers.items():
         qi = c.q_index.get(qid)
         if qi is None:
             raise UnknownQuestionError(f"Unknown or disabled question '{qid}'.")
+        if active is not None and qi not in active:
+            raise UnknownQuestionError(f"Question '{qid}' is not part of the {length} quiz.")
         q = c.questions[qi]
         if q.type == "pick_two":  # accept either order: 'c+a' is 'a+c'
             parts = aid.split("+")
@@ -488,11 +514,13 @@ def evaluate(
     include_explanation: bool = True,
     include_counterfactuals: bool = False,
     compiled: Optional[Compiled] = None,
+    length: str = "long",
 ) -> EvaluationResponse:
-    """Score a set of selected answers. Pure: no I/O, no mutation of ``config``."""
+    """Score a set of selected answers to the questions of one quiz length. Pure: no I/O, no mutation of ``config``."""
     c = compiled or compile_config(config)
-    picks = resolve_answers(c, answers)
-    missing = [q.id for q in c.questions if q.id not in answers]
+    active = active_questions(c, length)
+    picks = resolve_answers(c, answers, active, length)
+    missing = [c.questions[i].id for i in active if c.questions[i].id not in answers]
     if not picks or (missing and not allow_partial):
         raise IncompleteAssessmentError(missing)
 
@@ -616,17 +644,19 @@ def evaluate(
     ).strip()
 
     gap = class_totals[class_order[0]] - class_totals[class_order[1]]
-    if _r(gap) >= c.strong_margin:
+    scale = margin_scale(c, active)
+    strong_margin, moderate_margin = c.strong_margin * scale, c.moderate_margin * scale
+    if _r(gap) >= strong_margin:
         label = "Strong lean"
-    elif _r(gap) >= c.moderate_margin:
+    elif _r(gap) >= moderate_margin:
         label = "Clear lean"
     else:
         label = "Close call"
     confidence = Confidence(
         label=label,
         class_gap=_o(gap),
-        strong_margin=c.strong_margin,
-        moderate_margin=c.moderate_margin,
+        strong_margin=strong_margin,
+        moderate_margin=moderate_margin,
         note=(
             "Heuristic descriptor based on the gap between the top two class scores "
             "and configurable margins. It is not a statistical estimate or a probability."
@@ -661,7 +691,8 @@ def evaluate(
         config_revision=c.revision,
         algorithm_version=c.algorithm_version,
         answered_questions=len(picks),
-        total_questions=len(c.questions),
+        total_questions=len(active),
+        quiz_length=length,
         complete=not missing,
         provisional=bool(missing),
         missing_questions=missing,
@@ -852,14 +883,15 @@ def simulate(
     overrides=(),
     spec_overrides=(),
     include_explanation: bool = False,
+    length: str = "long",
 ) -> SimulationResponse:
     """Evaluate ``answers`` under the saved configuration and under a temporary override.
 
     The saved configuration is never modified. Partial answer sets are allowed here.
     """
     simulated_cfg = apply_overrides(config, overrides, spec_overrides)
-    original = evaluate(config, answers, allow_partial=True)
-    simulated = evaluate(simulated_cfg, answers, allow_partial=True)
+    original = evaluate(config, answers, allow_partial=True, length=length)
+    simulated = evaluate(simulated_cfg, answers, allow_partial=True, length=length)
 
     def diffs(a, b):
         by_id = {r.id: r for r in b}
@@ -910,9 +942,11 @@ def simulate(
     )
 
 
-def _batch_side(c: Compiled, count: int, seed: int) -> BatchSide:
+def _batch_side(c: Compiled, count: int, seed: int, length: str = "long") -> BatchSide:
     rng = random.Random(seed)
-    sizes = [len(q.answer_ids) for q in c.questions]
+    active = active_questions(c, length)
+    sizes = [(qi, len(c.questions[qi].answer_ids)) for qi in active]
+    moderate = c.moderate_margin * margin_scale(c, active)
     nc = c.n_classes
     class_counts = [0] * nc
     class_sums = [0.0] * nc
@@ -920,7 +954,7 @@ def _batch_side(c: Compiled, count: int, seed: int) -> BatchSide:
     gap_sum = 0.0
     close = 0
     for _ in range(count):
-        picks = [(qi, rng.randrange(n)) for qi, n in enumerate(sizes)]
+        picks = [(qi, rng.randrange(n)) for qi, n in sizes]
         ct = _class_totals(c, picks)
         tt = _trait_totals(c, picks)
         ci, si, gap = _lean_primary(c, ct, tt, _spec_totals(c, picks))
@@ -929,7 +963,7 @@ def _batch_side(c: Compiled, count: int, seed: int) -> BatchSide:
         for i in range(nc):
             class_sums[i] += ct[i]
         gap_sum += gap
-        if _r(gap) < c.moderate_margin:
+        if _r(gap) < moderate:
             close += 1
     class_rows = [
         FrequencyRow(
@@ -954,7 +988,7 @@ def _batch_side(c: Compiled, count: int, seed: int) -> BatchSide:
 
 
 def batch_simulate(
-    config: Config, count: int, seed: Optional[int] = None, overrides=(), spec_overrides=()
+    config: Config, count: int, seed: Optional[int] = None, overrides=(), spec_overrides=(), length: str = "long"
 ) -> BatchSimulateResponse:
     """Score ``count`` uniformly random answer sets to expose systematic biases.
 
@@ -962,10 +996,10 @@ def batch_simulate(
     saved and the overridden configuration.
     """
     seed = random.randrange(2**31) if seed is None else seed
-    baseline = _batch_side(compile_config(config), count, seed)
+    baseline = _batch_side(compile_config(config), count, seed, length)
     simulated = None
     if overrides or spec_overrides:
-        simulated = _batch_side(compile_config(apply_overrides(config, overrides, spec_overrides)), count, seed)
+        simulated = _batch_side(compile_config(apply_overrides(config, overrides, spec_overrides)), count, seed, length)
     return BatchSimulateResponse(
         count=count,
         seed=seed,

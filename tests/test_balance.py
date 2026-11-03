@@ -15,10 +15,11 @@ MIN_SPEC_SHARE = 0.20          # the requirement: a specialization wins at least
 CLASS_BAND = (0.08, 0.15)      # no class should be starved or dominant (an even split is 1/9 = 11.1%)
 
 
-@pytest.fixture(scope="module")
-def shares():
+@pytest.fixture(scope="module", params=["short", "medium", "long"])
+def shares(request):
+    """Result shares under uniformly random answers, for each quiz length."""
     cfg = build_default_config()
-    batch = batch_simulate(cfg, 12000, seed=20261104).baseline
+    batch = batch_simulate(cfg, 12000, seed=20261104, length=request.param).baseline
     class_count = {r.id: r.count for r in batch.class_frequencies}
     spec = defaultdict(dict)
     for r in batch.specialization_frequencies:
@@ -26,12 +27,12 @@ def shares():
     return {"class": {r.id: r.frequency for r in batch.class_frequencies}, "spec": dict(spec)}
 
 
-def test_every_specialization_wins_at_least_twenty_percent_of_its_class_under_random_answers(shares):
+def test_every_specialization_wins_at_least_twenty_percent_of_its_class_under_random_answers_at_every_length(shares):
     low = {f"{c}/{s}": round(v, 3) for c, specs in shares["spec"].items() for s, v in specs.items() if v < MIN_SPEC_SHARE}
     assert low == {}, low
 
 
-def test_every_class_is_recommended_a_fair_share_of_the_time(shares):
+def test_every_class_is_recommended_a_fair_share_of_the_time_at_every_length(shares):
     out = {c: round(v, 3) for c, v in shares["class"].items() if not CLASS_BAND[0] <= v <= CLASS_BAND[1]}
     assert out == {}, out
 
@@ -96,6 +97,7 @@ def test_the_fast_balance_simulator_matches_the_scoring_engine():
     spec = importlib.util.spec_from_file_location("balance", pathlib.Path(__file__).resolve().parent.parent / "tools" / "balance.py")
     balance = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(balance)
-    assert balance.parity(build_default_config(), k=120) == 0
-    rep = balance.Sim(build_default_config(), n=20000, seed=3).report()
-    assert min(v for specs in rep["spec"].values() for v in specs.values()) >= MIN_SPEC_SHARE
+    for length in ("short", "medium", "long"):
+        assert balance.parity(build_default_config(), k=100, length=length) == 0
+        rep = balance.Sim(build_default_config(), n=20000, seed=3, length=length).report()
+        assert min(v for specs in rep["spec"].values() for v in specs.values()) >= MIN_SPEC_SHARE, length

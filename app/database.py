@@ -63,7 +63,8 @@ CREATE TABLE IF NOT EXISTS questions (
     type          TEXT NOT NULL DEFAULT 'choice',          -- choice | scale | pick_two
     low_label     TEXT NOT NULL DEFAULT 'Strongly disagree',
     high_label    TEXT NOT NULL DEFAULT 'Strongly agree',
-    rationale     TEXT NOT NULL DEFAULT ''
+    rationale     TEXT NOT NULL DEFAULT '',
+    min_length    TEXT NOT NULL DEFAULT 'long'
 );
 
 CREATE TABLE IF NOT EXISTS answers (
@@ -183,6 +184,7 @@ _ADDED_COLUMNS = (
     ("questions", "low_label", "TEXT NOT NULL DEFAULT 'Strongly disagree'"),
     ("questions", "high_label", "TEXT NOT NULL DEFAULT 'Strongly agree'"),
     ("questions", "rationale", "TEXT NOT NULL DEFAULT ''"),
+    ("questions", "min_length", "TEXT NOT NULL DEFAULT 'long'"),
     ("classes", "overview", "TEXT NOT NULL DEFAULT ''"),
     ("classes", "overview_url", "TEXT NOT NULL DEFAULT ''"),
     ("specializations", "overview", "TEXT NOT NULL DEFAULT ''"),

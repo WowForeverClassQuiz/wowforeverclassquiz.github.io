@@ -8,7 +8,7 @@ import { weightGrid, nonzero, comparisonView, batchView } from "./shared.js";
 let root, cfg, defaults = null;
 let qid = "q01";
 let drafts = {};       // answer id -> {text, class_weights, trait_weights, spec_weights} (complete maps, zeros included)
-let qd = {};           // question-level draft: {text, low_label, high_label, rationale}
+let qd = {};           // question-level draft: {text, low_label, high_label, rationale, min_length}
 let previewBox = {};   // answer id -> element
 let matrixBody = null, matrixToken = 0;
 
@@ -41,7 +41,7 @@ export async function render(container) {
 }
 
 const question = () => cfg.questions.find((q) => q.id === qid);
-const qSaved = () => { const q = question(); return { text: q.text, low_label: q.low_label, high_label: q.high_label, rationale: q.rationale }; };
+const qSaved = () => { const q = question(); return { text: q.text, low_label: q.low_label, high_label: q.high_label, rationale: q.rationale, min_length: q.min_length || "long" }; };
 
 function draftOf(a) {
   return {
@@ -79,7 +79,7 @@ function draw() {
   clear(root);
   const q = question();
   const idx = cfg.questions.findIndex((x) => x.id === qid);
-  const label = (x) => `${String(cfg.questions.indexOf(x) + 1).padStart(2, "0")} · ${x.id.toUpperCase()} · ${TYPE_NAMES[x.type] || x.type} – ${x.text.length > 56 ? x.text.slice(0, 54) + "…" : x.text}`;
+  const label = (x) => `${String(cfg.questions.indexOf(x) + 1).padStart(2, "0")} · ${x.id.toUpperCase()} · ${TYPE_NAMES[x.type] || x.type} · ${{ short: "S", medium: "M" }[x.min_length] || "L"} – ${x.text.length > 56 ? x.text.slice(0, 54) + "…" : x.text}`;
   const select = h("select", { id: "qselect", "aria-label": "Question", onchange: (e) => selectQuestion(e.target.value) },
     cfg.questions.map((x) => h("option", { value: x.id, selected: x.id === qid }, label(x))));
 
@@ -94,6 +94,15 @@ function draw() {
     return h("label", { class: "field", style: { marginTop: "12px" } }, labelText, el, hint ? h("small", {}, hint) : null);
   };
 
+  // Which quiz lengths ask this question; the counts show what the three quizzes currently hold.
+  const rank = { short: 0, medium: 1, long: 2 };
+  const countFor = (len) => cfg.questions.filter((x) => x.enabled && rank[x.min_length || "long"] <= rank[len]).length;
+  const lengthSelect = h("select", { "aria-label": "Shortest quiz length that asks this question", onchange: (e) => { qd.min_length = e.target.value; refreshQ(); } },
+    [["short", "Short, medium and long quizzes"], ["medium", "Medium and long quizzes"], ["long", "Long quiz only"]]
+      .map(([v, t]) => h("option", { value: v, selected: qd.min_length === v }, t)));
+  const lengthField = h("label", { class: "field", style: { marginTop: "12px" } }, "Asked in",
+    lengthSelect, h("small", {}, `Currently the short quiz asks ${countFor("short")} questions, the medium ${countFor("medium")} and the long ${countFor("long")}. Changing this can unbalance a length: check Simulation > batch for it.`));
+
   root.append(
     h("div", { class: "page-head" },
       h("div", {}, h("h1", {}, "Question Editor"),
@@ -105,6 +114,7 @@ function draw() {
       h("div", { class: "row", style: { marginTop: "10px" } }, badge(TYPE_NAMES[q.type] || q.type, "info"), h("span", { class: "muted" }, `Revision ${cfg.revision}`)),
       h("p", { class: "note", style: { marginTop: "10px" } }, TYPE_HELP[q.type] || ""),
       field("text", 2, q.type === "scale" ? "Statement shown to the participant" : "Question text"),
+      lengthField,
       q.type === "scale" ? h("div", { class: "grid two" }, field("low_label", 1, "Label at rating 1"), field("high_label", 1, "Label at rating 10")) : null,
       field("rationale", 3, "Why the weights are what they are (administrator note, never shown to participants)"),
       h("div", { class: "row", style: { marginTop: "10px" } }, saveQ, discardQ)),

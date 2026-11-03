@@ -47,6 +47,7 @@ def export_static_data(cfg: Config) -> dict:
         {
             "id": q.id,
             "type": q.type,
+            "length_rank": q.length_rank,
             "item_ids": list(q.item_ids),
             "answer_ids": list(q.answer_ids),
             "class_raw": [list(r) for r in q.class_raw],

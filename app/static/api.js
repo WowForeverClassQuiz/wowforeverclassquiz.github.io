@@ -38,7 +38,7 @@ async function staticApi(path, method, body) {
   if (method === "GET" && path === "/quiz") return data.quiz;
   if (method === "POST" && path === "/evaluate") {
     try {
-      return engine.evaluate(compiled, body.answers);
+      return engine.evaluate(compiled, body.answers, { length: body.length || "long" });
     } catch (err) {
       if (err instanceof engine.ScoringError) throw new ApiError(422, { code: err.code, message: err.message });
       throw err;

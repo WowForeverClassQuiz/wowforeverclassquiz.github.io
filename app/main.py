@@ -246,7 +246,7 @@ def create_app(db_path: Optional[os.PathLike | str] = None, admin_token: Optiona
         ev = scoring.evaluate(
             cfg, req.answers, allow_partial=req.allow_partial,
             include_explanation=req.include_explanation or req.include_counterfactuals,
-            include_counterfactuals=req.include_counterfactuals,
+            include_counterfactuals=req.include_counterfactuals, length=req.length,
         )
         return with_builds(cfg, ev)
 
@@ -359,14 +359,14 @@ def create_app(db_path: Optional[os.PathLike | str] = None, admin_token: Optiona
               dependencies=admin, summary="Compare the saved configuration with temporary overrides")
     def simulate(req: SimulateRequest, repo: Repository = Depends(get_repo)):
         return scoring.simulate(
-            repo.get_config(), req.answers, req.overrides, req.specialization_overrides, req.include_explanation
+            repo.get_config(), req.answers, req.overrides, req.specialization_overrides, req.include_explanation, req.length
         )
 
     @api.post("/simulate/batch", response_model=BatchSimulateResponse, tags=["simulation"], dependencies=admin,
               summary="Score many random answer sets to reveal systematic bias")
     def simulate_batch(req: BatchSimulateRequest, repo: Repository = Depends(get_repo)):
         return scoring.batch_simulate(
-            repo.get_config(), req.count, req.seed, req.overrides, req.specialization_overrides
+            repo.get_config(), req.count, req.seed, req.overrides, req.specialization_overrides, req.length
         )
 
     # ======================================================================

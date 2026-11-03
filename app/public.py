@@ -10,12 +10,14 @@ from typing import Optional
 from . import builds as builds_mod
 from .models import (
     ALLOCATION_POINTS,
+    LENGTHS,
     SCALE_MAX,
     SCALE_MIN,
     BuildDetail,
     Config,
     EvaluationResponse,
     PublicAnswer,
+    PublicLength,
     PublicQuestion,
     PublicQuiz,
 )
@@ -36,14 +38,48 @@ def public_question(q) -> PublicQuestion:
     )
 
 
+#: How the lengths are presented to participants.
+LENGTH_NAMES = {"short": "Short", "medium": "Medium", "long": "Long"}
+LENGTH_BLURBS = {
+    "short": "A quick reading from the most telling questions.",
+    "medium": "A fuller reading, with more angles on your temperament.",
+    "long": "The complete reading: every question, the most to go on.",
+}
+SECONDS_PER_QUESTION = 20
+
+
+def public_lengths(cfg: Config) -> list[PublicLength]:
+    """The quiz lengths on offer, shortest first. A length that asks the same questions as a longer one is left out."""
+    qs = cfg.enabled_questions()
+    found: list[tuple[str, list[str]]] = []
+    for rank, length in enumerate(LENGTHS):
+        ids = [q.id for q in qs if LENGTHS.index(q.min_length) <= rank]
+        if not ids:
+            continue
+        if found and found[-1][1] == ids:
+            found[-1] = (length, ids)          # same questions as the shorter one: keep the longer name
+        else:
+            found.append((length, ids))
+    return [
+        PublicLength(
+            id=length, name=LENGTH_NAMES[length], description=LENGTH_BLURBS[length], question_count=len(ids),
+            minutes=max(1, round(len(ids) * SECONDS_PER_QUESTION / 60)), question_ids=ids,
+        )
+        for length, ids in found
+    ]
+
+
 def public_quiz(cfg: Config) -> PublicQuiz:
     qs = cfg.enabled_questions()
+    lengths = public_lengths(cfg)
     return PublicQuiz(
         quiz_id=cfg.quiz.id,
         title=cfg.quiz.title,
         subtitle=cfg.quiz.subtitle,
         question_count=len(qs),
         questions=[public_question(q) for q in qs],
+        lengths=lengths,
+        default_length="medium" if any(l.id == "medium" for l in lengths) else lengths[-1].id,
     )
 
 

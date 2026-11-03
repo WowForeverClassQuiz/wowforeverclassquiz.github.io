@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from app import scoring
-from app.models import Config
+from app.models import LENGTHS, Config
 from app.public import public_quiz, with_builds
 from app.seed import build_default_config
 from app.static_export import export_static_data
@@ -49,9 +49,9 @@ def random_answers(cfg: Config, rng: random.Random) -> dict[str, str]:
     return out
 
 
-def expected(cfg: Config, answers: dict) -> dict:
+def expected(cfg: Config, answers: dict, length: str = "long") -> dict:
     try:
-        ev = with_builds(cfg, scoring.evaluate(cfg, answers, include_explanation=False))
+        ev = with_builds(cfg, scoring.evaluate(cfg, answers, include_explanation=False, length=length))
     except scoring.IncompleteAssessmentError:
         return {"error": "incomplete_assessment"}
     except scoring.UnknownQuestionError:
@@ -94,6 +94,28 @@ def all_zero_config() -> Config:
 CONFIGS = {"seed": build_default_config, "edited": edited_config, "all-tied": all_zero_config}
 
 
+def of_length(cfg: Config, answers: dict, length: str) -> dict:
+    ids = {q.id for q in cfg.enabled_questions() if LENGTHS.index(q.min_length) <= LENGTHS.index(length)}
+    return {k: v for k, v in answers.items() if k in ids}
+
+
+@pytest.mark.parametrize("name", CONFIGS)
+@pytest.mark.parametrize("length", LENGTHS)
+def test_browser_engine_matches_python_engine_at_every_quiz_length(name, length):
+    cfg = CONFIGS[name]()
+    rng = random.Random(f"parity-{name}-{length}")
+    full = [random_answers(cfg, rng) for _ in range(30)]
+    sets = [of_length(cfg, a, length) for a in full]
+    if not sets[0]:
+        pytest.skip("this configuration has no questions of that length")
+    sets.append({k: v for k, v in list(sets[0].items())[1:]})                                    # incomplete for this length
+    sets.append(full[1])                                                                         # includes questions of longer lengths
+    sets.append({**sets[2], "q99": "a"})                                                         # unknown question
+    got = run_node({"cases": [{"data": export_static_data(cfg), "answers": sets, "length": length}]})["cases"][0]
+    for k, (answers, js) in enumerate(zip(sets, got)):
+        assert js == expected(cfg, answers, length), f"{name}/{length}: answer set {k} differs"
+
+
 @pytest.mark.parametrize("name", CONFIGS)
 def test_browser_engine_matches_python_engine(name):
     cfg = CONFIGS[name]()
@@ -112,12 +134,13 @@ def test_api_and_browser_engine_agree_through_http(client):
     cfg = client.get("/api/v1/config").json()
     rng = random.Random("http")
     config = Config.model_validate(cfg)
-    answer_sets = [random_answers(config, rng) for _ in range(8)]
-    got = run_node({"cases": [{"data": export_static_data(config), "answers": answer_sets}]})["cases"][0]
-    for answers, js in zip(answer_sets, got):
-        r = client.post("/api/v1/evaluate", json={"answers": answers, "include_explanation": False})
-        assert r.status_code == 200
-        assert js == r.json()
+    for length in LENGTHS:
+        answer_sets = [of_length(config, random_answers(config, rng), length) for _ in range(4)]
+        got = run_node({"cases": [{"data": export_static_data(config), "answers": answer_sets, "length": length}]})["cases"][0]
+        for answers, js in zip(answer_sets, got):
+            r = client.post("/api/v1/evaluate", json={"answers": answers, "length": length, "include_explanation": False})
+            assert r.status_code == 200
+            assert js == r.json()
 
 
 def test_exported_quiz_equals_the_api_quiz(client):

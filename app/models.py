@@ -25,6 +25,9 @@ LongText = Annotated[str, Field(max_length=4000)]
 
 BuildStatus = Literal["verified", "draft", "unverified", "pending"]
 QuestionType = Literal["choice", "scale", "pick_two", "ranking", "allocation"]
+QuizLength = Literal["short", "medium", "long"]
+#: Shortest to longest. A question with ``min_length`` L is asked in quiz length L and every longer one, so the quizzes are nested.
+LENGTHS: tuple[str, ...] = ("short", "medium", "long")
 #: "class_id/specialization_id", e.g. "warrior/fury"
 SpecKey = Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9_\-]*/[a-z0-9][a-z0-9_\-]*$", max_length=130)]
 SCALE_MIN, SCALE_MAX = 1, 10
@@ -292,6 +295,10 @@ class Question(Strict):
     low_label: Annotated[str, Field(max_length=80)] = "Strongly disagree"
     high_label: Annotated[str, Field(max_length=80)] = "Strongly agree"
     rationale: LongText = Field(default="", description="Administrator note: why the weights are what they are.")
+    min_length: QuizLength = Field(
+        default="long",
+        description="The shortest quiz length that asks this question: short, medium or long. Longer quizzes also ask it.",
+    )
     answers: list[Answer]
 
 
@@ -378,12 +385,23 @@ class PublicQuestion(BaseModel):
     points: Optional[int] = Field(default=None, description="Points to spend, for 'allocation' questions.")
 
 
+class PublicLength(BaseModel):
+    id: str
+    name: str
+    description: str
+    question_count: int
+    minutes: int = Field(description="A rough time to finish, assuming about twenty seconds a question.")
+    question_ids: list[str] = Field(description="The questions of this length, in quiz order.")
+
+
 class PublicQuiz(BaseModel):
     quiz_id: str
     title: str
     subtitle: str
-    question_count: int
-    questions: list[PublicQuestion]
+    question_count: int = Field(description="Questions in the longest quiz.")
+    questions: list[PublicQuestion] = Field(description="Every question; a length lists which of them it asks.")
+    lengths: list[PublicLength] = Field(default_factory=list, description="The quiz lengths on offer, shortest first.")
+    default_length: str = "long"
 
 
 # --------------------------------------------------------------------------
@@ -418,6 +436,7 @@ class ClassesResponse(BaseModel):
 
 class EvaluateRequest(Strict):
     answers: dict[str, str] = Field(description="question id -> answer id")
+    length: QuizLength = Field(default="long", description="Which quiz length these answers belong to; only its questions are scored.")
     include_explanation: bool = False
     include_counterfactuals: bool = False
     allow_partial: bool = Field(
@@ -582,6 +601,7 @@ class Metadata(BaseModel):
     provisional: bool
     missing_questions: list[str]
     spec_weight_multiplier: float = 1.0
+    quiz_length: str = "long"
     scores_are_probabilities: bool = False
     note: str = (
         "Scores are relative compatibility indicators, not probabilities. "
@@ -618,6 +638,7 @@ class SpecOverride(Strict):
 
 class SimulateRequest(Strict):
     answers: dict[str, str]
+    length: QuizLength = "long"
     overrides: list[AnswerOverride] = Field(default_factory=list)
     specialization_overrides: list[SpecOverride] = Field(default_factory=list)
     include_explanation: bool = False
@@ -696,6 +717,7 @@ class SimulationResponse(BaseModel):
 
 
 class BatchSimulateRequest(Strict):
+    length: QuizLength = "long"
     count: int = Field(default=5000, ge=1, le=20000)
     seed: Optional[int] = None
     overrides: list[AnswerOverride] = Field(default_factory=list)
@@ -756,6 +778,7 @@ class QuestionPatch(Strict):
     low_label: Optional[Annotated[str, Field(min_length=1, max_length=80)]] = None
     high_label: Optional[Annotated[str, Field(min_length=1, max_length=80)]] = None
     rationale: Optional[LongText] = None
+    min_length: Optional[QuizLength] = None
 
 
 class SpecPatch(Strict):
