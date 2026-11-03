@@ -12,22 +12,22 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import create_app
+from app.scoring import response_coefficients
 from app.seed import build_default_config
 
 #: A fixed, complete 30-answer set. Under the seed configuration it yields Druid / Feral Combat. It is a test
-#: fixture reached by search, not a realistic persona. (Four original questions are pick-two, so their answers are pairs.)
+#: fixture reached by search, not a realistic persona. (Two questions are pick-two, three are rankings and two are allocations, so their answers are pairs, orderings and splits.)
 DRUID_ANSWERS = {
-    "q01": "a", "q02": "c", "q03": "c", "q04": "a", "q05": "c", "q06": "d", "q07": "b+c", "q08": "d", "q09": "a+d", "q10": "a",
-    "q11": "a+c", "q12": "b", "q13": "d", "q14": "c", "q15": "a+b", "q16": "c", "q17": "6", "q18": "1", "q19": "10", "q20": "10",
-    "q21": "5", "q22": "10", "q23": "1", "q24": "5", "q25": "b+c", "q26": "a+b", "q27": "b+d", "q28": "b", "q29": "b", "q30": "b",
+    "q01": "a", "q02": "c", "q03": "c", "q04": "a", "q05": "c", "q06": "d", "q07": "b>c>a>d", "q08": "d", "q09": "3-0-0-3", "q10": "a",
+    "q11": "a>c>b>d", "q12": "b", "q13": "d", "q14": "c", "q15": "3-3-0-0", "q16": "c", "q17": "6", "q18": "1", "q19": "10", "q20": "10",
+    "q21": "5", "q22": "10", "q23": "1", "q24": "5", "q25": "b+c", "q26": "a>b>c>d", "q27": "b+d", "q28": "b", "q29": "b", "q30": "b",
 }
 ORIGINAL_ANSWERS = {k: v for k, v in DRUID_ANSWERS.items() if k <= "q16"}
 
 
 def first_answers(cfg):
-    """The first response to every enabled question: 'a', rating 1, or the first pair."""
-    return {q.id: ("1" if q.type == "scale" else f"{q.answers[0].id}+{q.answers[1].id}" if q.type == "pick_two" else q.answers[0].id)
-            for q in cfg.enabled_questions()}
+    """The first possible response to every enabled question (answer 'a', rating 1, the first pair, ordering or split)."""
+    return {q.id: response_coefficients(q)[0][0] for q in cfg.enabled_questions()}
 
 
 @pytest.fixture

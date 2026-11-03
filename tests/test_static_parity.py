@@ -37,6 +37,13 @@ def random_answers(cfg: Config, rng: random.Random) -> dict[str, str]:
         elif q.type == "pick_two":
             a, b = rng.sample([x.id for x in q.answers], 2)
             out[q.id] = f"{a}+{b}"                                  # either order: the engine normalizes it
+        elif q.type == "ranking":
+            order = [x.id for x in q.answers]
+            rng.shuffle(order)
+            out[q.id] = ">".join(order)
+        elif q.type == "allocation":
+            cuts = sorted(rng.randint(0, 6) for _ in range(3))
+            out[q.id] = "-".join(str(p) for p in (cuts[0], cuts[1] - cuts[0], cuts[2] - cuts[1], 6 - cuts[2]))
         else:
             out[q.id] = rng.choice(q.answers).id
     return out

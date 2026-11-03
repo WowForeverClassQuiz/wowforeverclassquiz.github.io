@@ -204,16 +204,25 @@ def test_incomplete_or_unsourced_builds_cannot_be_verified():
 
 
 def test_without_talent_data_nothing_can_be_verified():
-    cfg = build_default_config()
+    cfg = build_default_config(include_drafts=False)
     v = validate_build(Build.model_validate(make_build(status="draft")), cfg)
     assert not v.catalog_available and not v.can_verify
     assert any("no imported talent data" in p for p in v.verification_problems)
     assert v.warnings
 
 
-def test_seed_builds_are_honest_placeholders():
+def test_seed_ships_draft_builds_on_a_draft_catalog_and_none_is_verified():
     cfg = build_default_config()
-    assert len(cfg.builds) == 27
+    assert cfg.talent_catalog.data_status == "draft" and str(cfg.talent_catalog.source_updated) == "2026-11-02"
+    assert len(cfg.builds) == 27 and {b.status for b in cfg.builds} == {"draft"}
+    for b in cfg.builds:
+        assert b.is_default and b.verified_at is None and sum(b.allocations.values()) == 51 and len(b.leveling_order) == 51
+        assert validate_build(b, cfg).valid and not validate_build(b, cfg).can_verify
+
+
+def test_without_drafts_the_seed_builds_are_honest_placeholders():
+    cfg = build_default_config(include_drafts=False)
+    assert cfg.talent_catalog is None and len(cfg.builds) == 27
     assert {(b.class_id, b.specialization_id) for b in cfg.builds} == {
         (c.id, s.id) for c in cfg.classes for s in c.specializations
     }
@@ -254,7 +263,7 @@ def test_invalid_allocations_cannot_be_marked_verified(cat_client):
 def test_nothing_can_be_verified_without_talent_data(client):
     r = client.post(f"{API}/builds", json={"expected_revision": 1, "build": make_build()})
     assert r.status_code == 400
-    assert any("no imported talent data" in e for e in r.json()["detail"]["errors"])
+    assert any("marked draft" in e or "does not exist" in e for e in r.json()["detail"]["errors"])
     r = client.patch(f"{API}/builds/druid-feral-combat-leveling", json={"expected_revision": 1, "status": "verified"})
     assert r.status_code == 400
 
@@ -318,9 +327,9 @@ def test_participant_sees_verified_build_details_and_status(cat_client, druid_an
     assert build["id"] == "druid-feral-test" and build["status"] == "verified"
     assert "Verified against" in build["status_note"] and FIXTURE_VERSION in build["status_note"]
     assert build["tree_distribution_text"] == "0/51/0"
-    # Other specializations still show an honest "pending" placeholder.
+    # Other specializations show their draft build, labelled as not verified.
     alt = body["alternatives"]["alternative_specialization"]["build"]
-    assert alt["status"] == "pending" and "pending" in alt["status_note"].lower()
+    assert alt["status"] == "draft" and "not verified" in alt["status_note"].lower()
 
 
 def test_changing_a_build_does_not_alter_personality_scoring(cat_client, druid_answers):
@@ -363,7 +372,8 @@ def test_catalog_and_builds_survive_export_import(cat_client):
     create(cat_client)
     exported = cat_client.get(f"{API}/config/export").json()
     cat_client.post(f"{API}/config/reset", json={"expected_revision": rev(cat_client), "confirm": True})
-    assert cat_client.get(f"{API}/talents/catalog").json()["available"] is False
+    after_reset = cat_client.get(f"{API}/talents/catalog").json()
+    assert after_reset["available"] is True and after_reset["client_version"] != FIXTURE_VERSION   # back to the shipped draft catalog
     r = cat_client.post(f"{API}/config/import", json={"expected_revision": rev(cat_client), "config": exported})
     assert r.status_code == 200, r.text
     assert cat_client.get(f"{API}/builds/druid-feral-test").json()["build"]["status"] == "verified"

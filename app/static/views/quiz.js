@@ -1,9 +1,13 @@
 // Participant interface: the assessment and the result reveal. Never requests scoring weights.
-import { h, clear, fmt, signed, titleCase, roleLabel, purposeLabel, badge, toast, copyText, download, barChart, chartLegend, errorList, CLASS_COLORS } from "../ui.js";
+import { h, append, clear, fmt, signed, titleCase, roleLabel, purposeLabel, badge, toast, copyText, download, barChart, chartLegend, errorList, CLASS_COLORS } from "../ui.js";
 import { get, post, STATIC } from "../api.js";
 import { state } from "../state.js";
+import { classIcon, specIcon, spellName } from "../icons.js";
+import { talentTrees, dataNotice } from "../talenttree.js";
 
 let root = null;
+/** Null-safe: Element.append(null) would print the word "null" into the page. */
+const put = (...kids) => append(root, kids);
 let keyHandlerInstalled = false;
 
 export async function render(container) {
@@ -27,7 +31,7 @@ const complete = () => answered() === total() && state.quiz.questions.every((q) 
 // ---------------------------------------------------------------------------- intro
 function drawIntro() {
   const resuming = answered() > 0;
-  root.append(
+  put(
     h("section", { class: "hero" },
       h("div", { class: "sigil", "aria-hidden": "true" }, "✦"),
       h("h1", {}, state.quiz.title),
@@ -50,7 +54,11 @@ const TIPS = {
   choice: "Tip: press 1\u20134 to choose, Enter for next.",
   scale: "Tip: press 1\u20139 for a rating (0 for 10), Enter for next.",
   pick_two: "Tip: press 1\u20134 to pick or unpick, Enter for next.",
+  ranking: "Tip: press 1\u20134 to rank an item next (press it again to undo from there), Backspace to start over, Enter for next.",
+  allocation: "Tip: press 1\u20134 to give an item a point, Backspace to start over, Enter for next.",
 };
+
+const EYEBROWS = { choice: "Choose one", scale: "How much do you agree?", pick_two: "Choose two", ranking: "Put them in order", allocation: "Spend your points" };
 
 function drawQuestion() {
   const q = state.quiz.questions[state.index];
@@ -67,19 +75,19 @@ function drawQuestion() {
     })));
 
   const groupId = `q-${q.id}`;
-  const control = q.type === "scale" ? scaleControl(q, groupId) : q.type === "pick_two" ? pickControl(q, groupId) : choiceControl(q, groupId);
+  const control = ({ scale: scaleControl, pick_two: pickControl, ranking: rankingControl, allocation: allocationControl }[q.type] || choiceControl)(q, groupId);
 
   const missing = total() - answered();
   const next = isLast
     ? h("button", { class: "btn primary large", type: "button", id: "reveal", disabled: !complete(), onclick: reveal }, "Reveal my reading")
     : h("button", { class: "btn primary", type: "button", id: "next", disabled: !chosen, onclick: () => { state.index = i + 1; draw(); } }, "Next");
 
-  root.append(
+  put(
     h("div", { class: "progress-label" }, h("span", {}, `Question ${i + 1} of ${n}`), h("span", {}, `${answered()} answered`)),
     h("div", { class: "progress", role: "progressbar", "aria-valuemin": 0, "aria-valuemax": n, "aria-valuenow": answered(), "aria-label": "Questions answered" },
       h("i", { style: { width: `${(answered() / n) * 100}%` } })),
     dots,
-    q.type === "scale" ? h("p", { class: "eyebrow-q" }, "How much do you agree?") : q.type === "pick_two" ? h("p", { class: "eyebrow-q" }, "Choose two") : null,
+    h("p", { class: "eyebrow-q" }, EYEBROWS[q.type] || EYEBROWS.choice),
     h("h2", { class: "question", id: groupId }, q.text),
     control,
     h("div", { class: "nav-row" },
@@ -142,6 +150,57 @@ function pickControl(q, groupId) {
     h("p", { class: "pickhint", role: "status" }, `${sel.length} of 2 chosen`));
 }
 
+/** Rank all four items: tap them in order, best first. Tapping a ranked item undoes the ranking from that item on. */
+function rankingControl(q, groupId) {
+  const ids = q.answers.map((a) => a.id);
+  const ranked = state.answers[q.id] ? state.answers[q.id].split(">") : (state.picks[q.id] || []);
+  const tap = (id) => {
+    const next = ranked.includes(id) ? ranked.slice(0, ranked.indexOf(id)) : [...ranked, id];
+    state.picks[q.id] = next;
+    if (next.length === ids.length) state.answers[q.id] = next.join(">"); else delete state.answers[q.id];
+    draw();
+    focusAnswer(id);
+  };
+  return h("div", {},
+    h("div", { class: "answers", role: "group", "aria-labelledby": groupId }, q.answers.map((a) => {
+      const rank = ranked.indexOf(a.id) + 1;
+      return h("label", { class: "answer ranking" },
+        h("input", { type: "checkbox", value: a.id, checked: rank > 0, "aria-label": `${a.text}${rank ? `, ranked ${rank}` : ", not ranked yet"}`, onchange: () => tap(a.id) }),
+        h("span", { class: "key", "aria-hidden": "true" }, rank ? String(rank) : "\u2013"),
+        h("span", {}, a.text));
+    })),
+    h("p", { class: "pickhint", role: "status" }, ranked.length === ids.length ? "All four ranked." : `${ranked.length} of ${ids.length} ranked: tap the next one.`,
+      ranked.length ? [" ", h("button", { class: "linkish", type: "button", onclick: () => { state.picks[q.id] = []; delete state.answers[q.id]; draw(); } }, "Start over")] : null));
+}
+
+/** Spend a fixed number of points across the four items with + and - buttons. */
+function allocationControl(q, groupId) {
+  const total = q.points || 6;
+  const pts = state.answers[q.id] ? state.answers[q.id].split("-").map(Number) : (state.picks[q.id] || q.answers.map(() => 0));
+  const left = total - pts.reduce((s, x) => s + x, 0);
+  const change = (i, delta) => {
+    const next = [...pts];
+    next[i] += delta;
+    state.picks[q.id] = next;
+    if (next.reduce((s, x) => s + x, 0) === total) state.answers[q.id] = next.join("-"); else delete state.answers[q.id];
+    draw();
+    const again = root.querySelector(`[data-alloc="${i}:${delta > 0 ? "+" : "-"}"]`);
+    (again && !again.disabled ? again : root.querySelector(`[data-alloc="${i}:${delta > 0 ? "-" : "+"}"]`) || root).focus?.();
+  };
+  return h("div", {},
+    h("div", { class: "alloc", role: "group", "aria-labelledby": groupId }, q.answers.map((a, i) =>
+      h("div", { class: `alloc-row${pts[i] ? " has" : ""}` },
+        h("span", { class: "key", "aria-hidden": "true" }, String(i + 1)),
+        h("span", { class: "alloc-text" }, a.text),
+        h("span", { class: "alloc-ctl" },
+          h("button", { type: "button", class: "step", "data-alloc": `${i}:-`, disabled: pts[i] === 0, "aria-label": `Take a point from: ${a.text}`, onclick: () => change(i, -1) }, "\u2212"),
+          h("span", { class: "alloc-val", "aria-label": `${pts[i]} of ${total} points` }, String(pts[i])),
+          h("button", { type: "button", class: "step", "data-alloc": `${i}:+`, disabled: left === 0, "aria-label": `Give a point to: ${a.text}`, onclick: () => change(i, 1) }, "+")),
+        h("span", { class: "alloc-pips", "aria-hidden": "true" }, Array.from({ length: total }, (_, k) => h("i", { class: k < pts[i] ? "on" : "" })))))),
+    h("p", { class: "pickhint", role: "status" }, left === 0 ? `All ${total} points spent.` : `${left} of ${total} points left to spend.`,
+      left < total ? [" ", h("button", { class: "linkish", type: "button", onclick: () => { state.picks[q.id] = q.answers.map(() => 0); delete state.answers[q.id]; draw(); } }, "Start over")] : null));
+}
+
 function choose(q, value) {
   state.answers[q.id] = value;
   draw();
@@ -163,13 +222,21 @@ function installKeys() {
     if (/^[0-9]$/.test(e.key)) {
       if (q.type === "scale") {
         choose(q, e.key === "0" ? String(q.scale_max ?? 10) : e.key);
-      } else if (q.type === "pick_two") {
+      } else if (q.type === "pick_two" || q.type === "ranking") {
         const a = q.answers[+e.key - 1];
         const box = a && root.querySelector(`input[value="${CSS.escape(a.id)}"]`);
         if (box && !box.disabled) box.click();
+      } else if (q.type === "allocation") {
+        const plus = root.querySelector(`[data-alloc="${+e.key - 1}:+"]`);
+        if (plus && !plus.disabled) plus.click();
       } else if (q.answers[+e.key - 1]) {
         choose(q, q.answers[+e.key - 1].id);
       }
+    } else if (e.key === "Backspace" && (q.type === "ranking" || q.type === "allocation") && !e.target.matches("input[type=text], textarea")) {
+      e.preventDefault();
+      state.picks[q.id] = q.type === "allocation" ? q.answers.map(() => 0) : [];
+      delete state.answers[q.id];
+      draw();
     } else if (e.key === "Enter" && state.answers[q.id] && e.target.tagName !== "BUTTON") {
       const btn = document.getElementById("next") || document.getElementById("reveal");
       if (btn && !btn.disabled) btn.click();
@@ -185,7 +252,7 @@ async function reveal() {
     state.index = first;
     return draw();
   }
-  clear(root).append(h("div", { class: "reveal", role: "status" },
+  clear(root); put(h("div", { class: "reveal", role: "status" },
     h("div", { class: "sigil", "aria-hidden": "true" }, "✦"),
     h("h2", {}, "Reading the stars…")));
   try {
@@ -199,7 +266,7 @@ async function reveal() {
     draw();
     window.scrollTo(0, 0);
   } catch (err) {
-    clear(root).append(h("div", { class: "card" }, h("h2", {}, "The reading could not be completed"), errorList(err),
+    clear(root); put(h("div", { class: "card" }, h("h2", {}, "The reading could not be completed"), errorList(err),
       h("button", { class: "btn", type: "button", onclick: () => draw() }, "Back to the questions")));
   }
 }
@@ -238,9 +305,11 @@ function resultText(r) {
 function drawResult() {
   const r = state.result, p = r.result, alt = r.alternatives;
   const cls = CLASS_COLORS[p.primary_class.id] || "var(--accent)";
-  root.append(
+  put(
     h("section", { class: "result-hero", style: { "--cls": cls } },
       h("div", { class: "eyebrow" }, "The stars have chosen"),
+      h("div", { class: "hero-icons", title: `${p.primary_class.name}: ${spellName(p.primary_class.id, p.primary_specialization.id) || p.primary_specialization.name}` },
+        classIcon(p.primary_class.id, 56, p.primary_class.name), specIcon(p.primary_class.id, p.primary_specialization.id, 56)),
       h("h1", {}, p.primary_class.name),
       h("h2", {}, p.primary_specialization.name),
       h("div", { class: "chips" },
@@ -251,19 +320,22 @@ function drawResult() {
     h("div", { class: "card prose" }, h("h3", {}, "Your temperament"), h("p", {}, p.personality_interpretation)),
     overviewCard(p),
     h("div", { class: "card prose" }, h("h3", {}, `Why ${p.primary_specialization.name}`), h("p", {}, p.specialization_interpretation)),
-    buildCard(p.build, p.primary_specialization),
+    guideCard(p.primary_specialization),
+    buildCard(p.build, p.primary_specialization, p.primary_class.id),
     h("div", { class: "grid two", style: { marginTop: "20px" } },
       h("div", { class: "card" },
         h("h3", {}, "Also in the stars"),
-        h("p", {}, h("span", { class: "dot", style: { "--cls": CLASS_COLORS[alt.alternative_class.id] } }), h("b", {}, alt.alternative_class.name), ` – ${alt.alternative_specialization.name}`),
+        h("p", { class: "alt-line" }, classIcon(alt.alternative_class.id, 36, alt.alternative_class.name), specIcon(alt.alternative_class.id, alt.alternative_specialization.id, 36),
+          h("span", {}, h("b", {}, alt.alternative_class.name), ` – ${alt.alternative_specialization.name}`)),
         h("p", { class: "muted" }, alt.alternative_specialization.description),
         h("hr", { style: { border: 0, borderTop: "1px solid var(--border)", margin: "14px 0" } }),
-        h("p", {}, "Within ", h("b", {}, p.primary_class.name), ", your next-closest path is ", h("b", {}, alt.second_specialization_in_primary_class.name), "."),
+        h("p", { class: "alt-line" }, specIcon(p.primary_class.id, alt.second_specialization_in_primary_class.id, 36),
+          h("span", {}, "Within ", h("b", {}, p.primary_class.name), ", your next-closest path is ", h("b", {}, alt.second_specialization_in_primary_class.name), ".")),
         h("p", { class: "muted" }, alt.second_specialization_in_primary_class.description)),
       h("div", { class: "card" },
         h("h3", {}, "The numbers"),
         h("p", { class: "muted", style: { fontSize: "0.88rem" } }, "Relative compatibility, not probabilities. A longer bar to the right means a closer fit than the average answer pattern."),
-        barChart(r.rankings.classes.map((c) => ({ id: c.id, label: c.name, value: c.score })), { leadId: p.primary_class.id }),
+        barChart(r.rankings.classes.map((c) => ({ id: c.id, label: c.name, value: c.score, icon: classIcon(c.id, 18, c.name) })), { leadId: p.primary_class.id }),
         chartLegend()),
     ),
     h("div", { class: "row", style: { marginTop: "24px", justifyContent: "center" } },
@@ -290,46 +362,51 @@ function overviewCard(p) {
 
 function safeUrl(u) { return /^https?:\/\//i.test(u || "") ? u : null; }
 
-function buildCard(build, spec) {
+/** Roles in dungeons and raids, gear to look for, and who competes for it. */
+function guideCard(spec) {
+  const g = spec.guide;
+  if (!g) return null;
+  const list = (items) => (items && items.length ? h("ul", {}, items.map((x) => h("li", {}, x))) : null);
+  return h("div", { class: "card guide" },
+    h("h3", {}, `Your role and gear as a ${spec.name} ${spec.class_name}`),
+    h("div", { class: "grid two roles" },
+      g.dungeon_role ? h("div", {}, h("h4", {}, "In dungeons"), h("p", {}, g.dungeon_role)) : null,
+      g.raid_role ? h("div", {}, h("h4", {}, "In raids"), h("p", {}, g.raid_role)) : null),
+    g.gear && g.gear.length ? h("div", {}, h("h4", {}, "Gear to look out for"), list(g.gear)) : null,
+    g.competes_with && g.competes_with.length ? h("div", {}, h("h4", {}, "Who competes with you for gear"), list(g.competes_with)) : null,
+    g.note ? h("p", { class: "muted guide-note" }, g.note) : null);
+}
+
+function buildCard(build, spec, classId) {
   if (!build) {
     return h("div", { class: "card" }, h("h3", {}, "Your build"), h("p", { class: "muted" }, `No build has been configured for ${spec.name} yet.`));
   }
   const kind = { verified: "ok", draft: "warn", unverified: "warn", pending: "info" }[build.status] || "";
   const label = { verified: "Verified", draft: "Draft - not verified", unverified: "Unverified", pending: "Allocation pending" }[build.status] || build.status;
   const names = Object.fromEntries(build.talents.map((t) => [t.talent_id, t.name || t.talent_id]));
-  const byTree = {};
-  build.talents.forEach((t) => (byTree[t.tree_id || "other"] ||= []).push(t));
   const hasAlloc = build.talents.length > 0;
-
-  const alloc = hasAlloc ? h("div", { class: "tree-cols" }, Object.entries(byTree).map(([tree, ts]) =>
-    h("div", { class: "tree-col" }, h("h4", {}, `${titleCase(tree)} · ${ts.reduce((s, t) => s + t.rank, 0)} pts`),
-      h("ul", {}, ts.map((t) => h("li", {}, h("span", {}, names[t.talent_id]), h("span", { class: "mono" }, t.max_rank ? `${t.rank}/${t.max_rank}` : t.rank))))))) : null;
-
+  const trees = hasAlloc ? talentTrees(build, classId, spec.id) : null;
   const verified = build.status === "verified";
   const sourceLine = h("p", { class: "muted", style: { fontSize: "0.85rem", marginTop: "12px" } },
     `Source: ${build.source}`, build.client_version ? ` · talent data ${build.client_version}` : "", build.verified_at ? ` · verified ${build.verified_at}` : "",
     safeUrl(build.source_url) ? [" · ", h("a", { href: safeUrl(build.source_url), target: "_blank", rel: "noopener noreferrer" }, "model build page")] : null,
     safeUrl(build.calculator_url) ? [" · ", h("a", { href: safeUrl(build.calculator_url), target: "_blank", rel: "noopener noreferrer" }, "talent calculator")] : null);
-  // Everything below is shown inline for a verified build and tucked inside a labelled section for a provisional one.
-  const body = hasAlloc ? [
-    alloc,
-    build.leveling_order.length
-      ? h("details", { style: { marginTop: "12px" } }, h("summary", {}, "Order to spend points while leveling"),
-          h("ol", { class: "order", start: 10 }, build.leveling_order.map((id, k) => h("li", { value: 10 + k }, `${names[id] || id}`))))
-      : null,
-    build.combat_priorities.length ? h("div", { style: { marginTop: "12px" } }, h("h4", {}, "Notes on this build"), h("ul", {}, build.combat_priorities.map((c) => h("li", {}, c)))) : null,
-    build.equipment_notes.length ? h("div", { style: { marginTop: "12px" } }, h("h4", {}, "Attributes and equipment"), h("ul", {}, build.equipment_notes.map((c) => h("li", {}, c)))) : null,
-    build.professions.length ? h("p", {}, h("b", {}, "Professions: "), build.professions.join(", ")) : null,
-    !verified && build.notes ? h("div", { style: { marginTop: "12px" } }, h("h4", {}, "How this was put together"), h("p", { style: { fontSize: "0.92rem" } }, build.notes)) : null,
-    sourceLine,
-  ] : [];
-  return h("div", { class: "card" },
+  return h("div", { class: "card build" },
     h("div", { class: "row between" },
       h("h3", { style: { margin: 0 } }, "Your build"),
       h("span", { class: "row" }, badge(label, kind), build.tree_distribution_text ? badge(`${build.tree_distribution_text} points`, "") : null)),
     h("p", { style: { margin: "10px 0 4px" } }, h("b", {}, build.name), ` · ${purposeLabel(build.purpose)} · level ${build.level}`),
     h("p", { class: `note${verified ? "" : " warn"}` }, build.status_note),
-    hasAlloc && verified ? body : null,
-    hasAlloc && !verified ? h("details", { style: { marginTop: "12px" } }, h("summary", {}, "Best-guess build details (not verified)"), body) : null,
-  );
+    hasAlloc ? dataNotice(build) : null,
+    trees,
+    hasAlloc && !trees ? h("p", { class: "muted" }, "The talent trees for this class are not available, so only the allocation order is shown.") : null,
+    hasAlloc && build.leveling_order.length
+      ? h("details", { style: { marginTop: "14px" } }, h("summary", {}, "Order to spend points while leveling"),
+          h("ol", { class: "order", start: 10 }, build.leveling_order.map((id, k) => h("li", { value: 10 + k }, `${names[id] || id}`))))
+      : null,
+    hasAlloc && build.combat_priorities.length ? h("div", { style: { marginTop: "12px" } }, h("h4", {}, "Notes on this build"), h("ul", {}, build.combat_priorities.map((c) => h("li", {}, c)))) : null,
+    hasAlloc && build.equipment_notes.length ? h("div", { style: { marginTop: "12px" } }, h("h4", {}, "Attributes and equipment"), h("ul", {}, build.equipment_notes.map((c) => h("li", {}, c)))) : null,
+    hasAlloc && build.professions.length ? h("p", {}, h("b", {}, "Professions: "), build.professions.join(", ")) : null,
+    hasAlloc && !verified && build.notes ? h("div", { style: { marginTop: "12px" } }, h("h4", {}, "How this was put together"), h("p", { style: { fontSize: "0.92rem" } }, build.notes)) : null,
+    hasAlloc ? sourceLine : null);
 }

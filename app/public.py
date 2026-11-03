@@ -9,6 +9,7 @@ from typing import Optional
 
 from . import builds as builds_mod
 from .models import (
+    ALLOCATION_POINTS,
     SCALE_MAX,
     SCALE_MIN,
     BuildDetail,
@@ -31,6 +32,7 @@ def public_question(q) -> PublicQuestion:
         id=q.id, text=q.text, type=q.type,
         answers=[PublicAnswer(id=a.id, text=a.text) for a in q.answers],
         pick_count=2 if q.type == "pick_two" else None,
+        points=ALLOCATION_POINTS if q.type == "allocation" else None,
     )
 
 
@@ -48,7 +50,7 @@ def public_quiz(cfg: Config) -> PublicQuiz:
 def default_build_detail(cfg: Config, class_id: str, spec_id: str) -> Optional[BuildDetail]:
     """The default build of a specialization, ready to display (no validation report), or None when there is none."""
     b = builds_mod.default_build(cfg, class_id, spec_id)
-    return builds_mod.describe_build(b, cfg, with_validation=False) if b else None
+    return builds_mod.describe_build(b, cfg, with_validation=False, with_trees=True) if b else None
 
 
 def with_builds(cfg: Config, ev: EvaluationResponse) -> EvaluationResponse:

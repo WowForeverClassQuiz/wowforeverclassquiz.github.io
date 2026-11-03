@@ -36,6 +36,7 @@ def export_static_data(cfg: Config) -> dict:
                     "role": s.role,
                     "description": s.description,
                     "overview": s.overview,
+                    "guide": s.guide,
                     "gidx": s.gidx,
                     "terms": [[t, m] for t, m in s.terms],
                 }

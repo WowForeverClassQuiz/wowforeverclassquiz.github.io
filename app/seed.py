@@ -15,6 +15,8 @@ specialization weights; the sixteen original questions deliberately do not.
 """
 from __future__ import annotations
 
+from .drafts import apply_drafts
+from .spec_guides import GUIDE_NOTE, GUIDES
 from .seed_tuning import ORIGINAL_CLASS_PAIRS, SPEC_WEIGHTS, TYPE_CHANGES
 from .models import (
     Answer,
@@ -25,11 +27,12 @@ from .models import (
     Question,
     QuizMeta,
     ScoringSettings,
+    SpecGuide,
     Specialization,
     Trait,
 )
 
-ALGORITHM_VERSION = "1.2.0"
+ALGORITHM_VERSION = "1.3.0"
 
 # Primary / secondary / tertiary multipliers for the original three-trait profiles.
 SPEC_MULTIPLIERS = (1.5, 1.0, 0.45)
@@ -433,8 +436,8 @@ NEW_QUESTIONS = {
             ("A set of lockpicks and a pack of marked cards", ("rogue", "warlock"), ("trickster", "shadow")),
             ("A travelling spellbook and an inkwell", ("mage", "warlock"), ("scholar", "focus")),
         ]),
-    "q26": dict(type="pick_two", text="Two travelling companions ask to join you. Whom do you welcome?",
-        rationale="Pick two: the pair's weights add. Companions stand for a pet bond, a scoundrel, a veteran and a gentle healer.",
+    "q26": dict(type="ranking", text="Four travelling companions ask to join you. Rank them from the one you would welcome most gladly to the one you would welcome least.",
+        rationale="Ranking: the first choice counts most and the last not at all. Companions stand for a pet bond, a scoundrel, a veteran and a gentle healer.",
         answers=[
             ("A silent grey wolf that matches your pace", ("hunter", "druid"), ("bond", "wild")),
             ("A cheerful scoundrel with a long list of debts", ("rogue", "warlock"), ("trickster", "instinct")),
@@ -497,8 +500,12 @@ def _new_question(qid: str, d: dict) -> Question:
     return Question(id=qid, text=d["text"], type=d["type"], rationale=d["rationale"], answers=answers)
 
 
-def build_default_config() -> Config:
-    """Return a fresh copy of the original configuration (revision 1)."""
+def build_default_config(include_drafts: bool = True) -> Config:
+    """Return a fresh copy of the original configuration (revision 1).
+
+    ``include_drafts`` adds the draft talent catalog and the 27 draft builds (app/drafts.py); without it every build is a
+    "pending" placeholder.
+    """
     traits = [
         Trait(id=i, name=name, description=desc, interpretation=reading)
         for i, name, desc, reading in TRAITS
@@ -517,6 +524,7 @@ def build_default_config() -> Config:
                     role=role,
                     description=sdesc,
                     overview=OVERVIEWS[cid][1][sid],
+                    guide=SpecGuide(note=GUIDE_NOTE, **GUIDES[(cid, sid)]),
                     trait_multipliers=dict(zip(profile, SPEC_MULTIPLIERS)),
                 )
                 for sid, sname, role, sdesc, profile in specs
@@ -563,7 +571,7 @@ def build_default_config() -> Config:
         for cls in classes
         for spec in cls.specializations
     ]
-    return Config(
+    cfg = Config(
         revision=1,
         quiz=QuizMeta(
             id="wow-forever-oracle",
@@ -584,3 +592,4 @@ def build_default_config() -> Config:
         builds=builds,
         talent_catalog=None,
     )
+    return apply_drafts(cfg) if include_drafts else cfg

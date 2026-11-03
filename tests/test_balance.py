@@ -64,7 +64,7 @@ def test_type_changes_keep_the_original_four_answers_and_only_reword_the_questio
     original = {qid: (text, answers) for qid, text, answers in QUESTIONS}
     for qid, (qtype, text) in seed_tuning.TYPE_CHANGES.items():
         q = cfg.get_question(qid)
-        assert q.type == qtype == "pick_two" and q.text == text and q.text != original[qid][0]
+        assert q.type == qtype in ("ranking", "allocation") and q.text == text and q.text != original[qid][0]
         assert [a.text for a in q.answers] == [a[1] for a in original[qid][1]]       # the answers themselves are untouched
 
 

@@ -105,12 +105,13 @@ def _read_config(conn) -> Config:
         profiles[(r["class_id"], r["specialization_id"])][r["trait_id"]] = r["weight"]
     specs: dict[str, list[dict]] = defaultdict(list)
     for r in conn.execute(
-        "SELECT class_id, id, name, description, role, overview FROM specializations ORDER BY class_id, display_order"
+        "SELECT class_id, id, name, description, role, overview, guide FROM specializations ORDER BY class_id, display_order"
     ):
         specs[r["class_id"]].append(
             {
                 "id": r["id"], "name": r["name"], "description": r["description"], "role": r["role"],
                 "overview": r["overview"],
+                "guide": json.loads(r["guide"]) if r["guide"] else {},
                 "trait_multipliers": profiles[(r["class_id"], r["id"])],
             }
         )
@@ -196,9 +197,9 @@ def _write_config(conn, cfg: Config) -> None:
         )
         for si, s in enumerate(cls.specializations):
             conn.execute(
-                "INSERT INTO specializations (class_id, id, name, description, role, display_order, overview) "
-                "VALUES (?,?,?,?,?,?,?)",
-                (cls.id, s.id, s.name, s.description, s.role, si, s.overview),
+                "INSERT INTO specializations (class_id, id, name, description, role, display_order, overview, guide) "
+                "VALUES (?,?,?,?,?,?,?,?)",
+                (cls.id, s.id, s.name, s.description, s.role, si, s.overview, s.guide.model_dump_json()),
             )
             conn.executemany(
                 "INSERT INTO specialization_trait_weights VALUES (?,?,?,?,?)",
@@ -454,6 +455,8 @@ class Repository:
                 value = getattr(patch, field)
                 if value is not None:
                     setattr(s, field, value)
+            if patch.guide is not None:
+                s.guide = patch.guide
             return cfg, {"target": f"{class_id}/{spec_id}", "before": before, "after": s.model_dump(mode="json")}
 
         return self._commit(patch.expected_revision, "specialization", f"Edited specialization {class_id}/{spec_id}", fn)

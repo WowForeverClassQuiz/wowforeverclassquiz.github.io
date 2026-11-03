@@ -30,6 +30,10 @@ vector; the baseline is always the mean over that question's responses:
             two answers' weights.
   scale     ten responses '1'..'10'. With s = (r - 5.5) / 4.5 in [-1, 1], the response weights are
             max(s, 0) * agree + max(-s, 0) * disagree, where 'agree' and 'disagree' are the two pole answers.
+  ranking   one response per ordering of the four answers (id 'c>a>d>b', best first, 24 in all); the answer
+            ranked r-th (0 = first) counts (3 - r) / 2, i.e. 1.5, 1, 0.5, 0.
+  allocation one response per way of spending six points over the four answers (id '2-0-3-1', 84 in all); an answer
+            given p points counts p / 3.
 
 Only the winning class's specializations decide the primary result. Ties are broken
 deterministically (class tie-break order, then specialization order, then trait order).
@@ -65,12 +69,14 @@ from .models import (
     ResultBlock,
     ScoreDiff,
     SimulationResponse,
+    SpecGuide,
     SpecDiff,
     SpecPick,
     SpecScore,
     SpecTerm,
     TieBreak,
     TraitScore,
+    ALLOCATION_POINTS,
     SCALE_MAX,
     SCALE_MIN,
 )
@@ -88,6 +94,8 @@ FORMULAS = {
     "direct_specialization": "delta_spec(q,s) = w[q,chosen,s] - (1/n) * sum_a w[q,a,s], using the answers' 'class/spec' weights; m = spec_weight_multiplier",
     "scale_response": "scale rating r in 1..10: s = (r - 5.5) / 4.5; response weights = max(s,0) * agree-pole + max(-s,0) * disagree-pole",
     "pick_two_response": "pick-two response 'a+c' carries the sum of the two chosen answers' weights; the baseline is the mean over all six pairs",
+    "ranking_response": "ranking response 'c>a>d>b' weights the answers 1.5, 1, 0.5 and 0 from best to last; the baseline is the mean over all 24 orderings",
+    "allocation_response": "allocation response '2-0-3-1' weights each answer by its points / 3 (six points in all); the baseline is the mean over all 84 splits",
     "interpretation": "Scores are relative compatibility indicators, not probabilities.",
 }
 
@@ -162,6 +170,7 @@ class CSpec:
     description: str
     terms: tuple[tuple[int, float], ...]  # (trait index, multiplier), profile order
     overview: str = ""
+    guide: Optional[dict] = None  # SpecGuide as a plain dict, or None when it holds nothing
 
 
 @dataclass(frozen=True)
@@ -268,6 +277,7 @@ def compile_config(config: Config) -> Compiled:
                     role=s.role,
                     description=s.description,
                     overview=s.overview,
+                    guide=s.guide.model_dump() if any(s.guide.model_dump().values()) else None,
                     terms=tuple((trait_index[t], float(m)) for t, m in s.trait_multipliers.items()),
                 )
             )
@@ -309,43 +319,66 @@ def _mix(parts) -> dict[str, float]:
     return out
 
 
-def _response_table(q: Question) -> list[tuple[str, str, dict, dict, dict]]:
-    """Every possible response to a question: (id, label, class weights, trait weights, spec weights)."""
+def response_coefficients(q: Question) -> list[tuple[str, str, list[float]]]:
+    """Every possible response to a question as (id, label, coefficient of each answer, in answer order).
+
+    A response's weights are always the coefficient-weighted sum of its answers' weights, so one table describes
+    every question type (and lets tuning tools reason about a single answer's influence)."""
+    n = len(q.answers)
     if q.type == "choice":
-        if len(q.answers) < 2:
+        if n < 2:
             raise ScoringError(f"Question {q.id} needs at least two answers.")
-        return [(a.id, a.text, a.class_weights, a.trait_weights, a.spec_weights) for a in q.answers]
+        return [(a.id, a.text, [1.0 if j == i else 0.0 for j in range(n)]) for i, a in enumerate(q.answers)]
+    if q.type in ("pick_two", "ranking", "allocation") and n != 4:
+        raise ScoringError(f"Question {q.id} ({q.type}) needs exactly four answers.")
     if q.type == "pick_two":
-        if len(q.answers) != 4:
-            raise ScoringError(f"Question {q.id} (pick_two) needs exactly four answers.")
+        return [
+            (f"{q.answers[i].id}+{q.answers[j].id}", f"{q.answers[i].text} + {q.answers[j].text}",
+             [1.0 if k in (i, j) else 0.0 for k in range(4)])
+            for i, j in itertools.combinations(range(4), 2)
+        ]
+    if q.type == "ranking":  # the answer ranked r-th (0 = first) counts (3 - r) / 2: 1.5, 1, 0.5, 0
         rows = []
-        for i, j in itertools.combinations(range(4), 2):
-            a, b = q.answers[i], q.answers[j]
-            rows.append((
-                f"{a.id}+{b.id}", f"{a.text} + {b.text}",
-                _mix([(1, a.class_weights), (1, b.class_weights)]),
-                _mix([(1, a.trait_weights), (1, b.trait_weights)]),
-                _mix([(1, a.spec_weights), (1, b.spec_weights)]),
-            ))
+        for perm in itertools.permutations(range(4)):
+            coefs = [0.0] * 4
+            for rank, i in enumerate(perm):
+                coefs[i] = (3 - rank) / 2
+            rows.append((">".join(q.answers[i].id for i in perm), " > ".join(q.answers[i].text for i in perm), coefs))
+        return rows
+    if q.type == "allocation":  # six points over four answers; an answer given p points counts p / 3
+        rows = []
+        for pts in itertools.product(range(ALLOCATION_POINTS + 1), repeat=4):
+            if sum(pts) != ALLOCATION_POINTS:
+                continue
+            label = ", ".join(f"{q.answers[i].text} x{p}" for i, p in enumerate(pts) if p)
+            rows.append(("-".join(str(p) for p in pts), label, [p / (ALLOCATION_POINTS / 2) for p in pts]))
         return rows
     if q.type == "scale":
-        poles = {a.id: a for a in q.answers}
-        if len(q.answers) != 2 or set(poles) != {"agree", "disagree"}:
+        poles = {a.id: i for i, a in enumerate(q.answers)}
+        if n != 2 or set(poles) != {"agree", "disagree"}:
             raise ScoringError(f"Question {q.id} (scale) needs exactly the answers 'agree' and 'disagree'.")
-        agree, disagree = poles["agree"], poles["disagree"]
         mid, half = (SCALE_MIN + SCALE_MAX) / 2, (SCALE_MAX - SCALE_MIN) / 2
         rows = []
         for r in range(SCALE_MIN, SCALE_MAX + 1):
             s = (r - mid) / half
-            pos, neg = max(s, 0.0), max(-s, 0.0)
-            rows.append((
-                str(r), f"{r} of {SCALE_MAX}",
-                _mix([(pos, agree.class_weights), (neg, disagree.class_weights)]),
-                _mix([(pos, agree.trait_weights), (neg, disagree.trait_weights)]),
-                _mix([(pos, agree.spec_weights), (neg, disagree.spec_weights)]),
-            ))
+            coefs = [0.0, 0.0]
+            coefs[poles["agree"]], coefs[poles["disagree"]] = max(s, 0.0), max(-s, 0.0)
+            rows.append((str(r), f"{r} of {SCALE_MAX}", coefs))
         return rows
     raise ScoringError(f"Question {q.id} has unknown type '{q.type}'.")
+
+
+def _response_table(q: Question) -> list[tuple[str, str, dict, dict, dict]]:
+    """Every possible response to a question: (id, label, class weights, trait weights, spec weights)."""
+    return [
+        (
+            rid, label,
+            _mix([(f, a.class_weights) for f, a in zip(coefs, q.answers)]),
+            _mix([(f, a.trait_weights) for f, a in zip(coefs, q.answers)]),
+            _mix([(f, a.spec_weights) for f, a in zip(coefs, q.answers)]),
+        )
+        for rid, label, coefs in response_coefficients(q)
+    ]
 
 
 # --------------------------------------------------------------------------
@@ -557,6 +590,7 @@ def evaluate(
             role=row.role,
             score=row.score,
             description=s.description,
+            guide=SpecGuide.model_validate(s.guide) if s.guide else None,
         )
 
     primary_pick = pick(p_ci, primary_specs[0])

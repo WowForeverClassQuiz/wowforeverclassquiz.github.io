@@ -32,6 +32,9 @@ def test_the_site_has_the_page_the_browser_code_and_the_data(site):
         assert (site / rel).is_file(), rel
     data = json.loads((site / "data" / "oracle.json").read_text(encoding="utf-8"))
     assert len(data["quiz"]["questions"]) == 30 and len(data["builds"]) == 27 and data["format"] == 1
+    # the published builds are the draft ones with their trees, not "allocation pending" placeholders
+    assert {b["status"] for b in data["builds"].values()} == {"draft"} and all(len(b["trees"]) == 3 for b in data["builds"].values())
+    assert all(s["guide"] for cl in data["engine"]["classes"] for s in cl["specs"])
 
 
 def test_the_page_is_switched_to_static_mode_and_uses_only_relative_paths(site):

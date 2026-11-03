@@ -147,7 +147,7 @@ export function barChart(rows, { selectedId = null, onSelect = null, decimals = 
       onkeydown: onSelect ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect(r.id); } } : null,
       "aria-label": `${r.label}: ${format ? format(r.value) : signed(r.value, decimals)}`,
     },
-      h("span", { class: "bar-label", title: r.label }, r.label),
+      h("span", { class: "bar-label", title: r.label }, r.icon || null, h("span", { class: "bar-label-text" }, r.label)),
       h("span", { class: "bar-track", style: { "--zero": `${zero}%` } }, mk(r.ghost, "ghost"), mk(r.value)),
       h("span", { class: "bar-val" }, format ? format(r.value) : signed(r.value, decimals)),
     );

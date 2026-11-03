@@ -1,5 +1,6 @@
 // Components shared by several administrative views.
 import { h, fmt, signed, pct, badge, barChart, chartLegend, tipRows } from "../ui.js";
+import { responseIds, responseLabel } from "../state.js";
 
 /** A grid of non-negative number inputs. onInput(id, value) receives a number, or NaN for invalid text. */
 export function weightGrid(items, values, onInput, saved = values) {
@@ -31,18 +32,16 @@ export function nonzero(obj) {
   return Object.fromEntries(Object.entries(obj).filter(([, v]) => v > 0));
 }
 
-/** One selected response per question: A-D buttons, 1-10 buttons, or a pair menu, depending on the question type. */
+/** One selected response per question: A-D buttons, 1-10 buttons, or a menu of pairs, orderings or splits, depending on the question type. */
 export function answerPicker(cfg, answers, onChange) {
   const rows = cfg.questions.filter((q) => q.enabled).map((q) => {
     let control;
-    if (q.type === "pick_two") {
-      const ids = q.answers.map((a) => a.id);
-      const pairs = ids.flatMap((x, i) => ids.slice(i + 1).map((y) => `${x}+${y}`));
+    if (["pick_two", "ranking", "allocation"].includes(q.type)) {
       control = h("select", {
-        "aria-label": `${q.id} pair`,
+        "aria-label": `${q.id} response`,
         onchange: (e) => { if (e.target.value) answers[q.id] = e.target.value; else delete answers[q.id]; onChange(answers); },
       }, h("option", { value: "" }, "\u2013 none \u2013"),
-        pairs.map((p) => h("option", { value: p, selected: answers[q.id] === p, title: p }, p.toUpperCase().replace("+", " + "))));
+        responseIds(q).map((p) => h("option", { value: p, selected: answers[q.id] === p, title: p }, responseLabel(q, p))));
     } else {
       const options = q.type === "scale"
         ? Array.from({ length: 10 }, (_, i) => ({ value: String(i + 1), label: String(i + 1), title: `${i + 1} of 10` }))

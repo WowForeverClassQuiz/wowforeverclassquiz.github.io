@@ -24,10 +24,11 @@ ShortText = Annotated[str, Field(min_length=1, max_length=600)]
 LongText = Annotated[str, Field(max_length=4000)]
 
 BuildStatus = Literal["verified", "draft", "unverified", "pending"]
-QuestionType = Literal["choice", "scale", "pick_two"]
+QuestionType = Literal["choice", "scale", "pick_two", "ranking", "allocation"]
 #: "class_id/specialization_id", e.g. "warrior/fury"
 SpecKey = Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9_\-]*/[a-z0-9][a-z0-9_\-]*$", max_length=130)]
 SCALE_MIN, SCALE_MAX = 1, 10
+ALLOCATION_POINTS = 6   # points a participant spends across the four items of an 'allocation' question
 
 KNOWN_BUILD_PURPOSES = (
     "leveling_pve",
@@ -94,6 +95,9 @@ class TalentCatalog(Strict):
         description="'draft' data was not read from the game client; builds can be checked against it but never marked verified.",
     )
     notes: LongText = ""
+    source_updated: Optional[date] = Field(
+        default=None, description="Date of the newest source behind this data (for example the latest developer notes it reflects).",
+    )
     points_per_tier: int = Field(
         default=5,
         ge=0,
@@ -157,6 +161,38 @@ class ResolvedTalent(Strict):
     max_rank: Optional[int] = None
 
 
+class TreeTalent(Strict):
+    id: str
+    name: str
+    tier: int
+    column: int
+    max_rank: int
+    rank: int = 0
+    requires: list[TalentPrerequisite] = Field(default_factory=list)
+    description: str = ""
+
+
+class TreeView(Strict):
+    """One talent tree of the class with the build's ranks filled in, for drawing the tree."""
+
+    id: str
+    name: str
+    points: int = 0
+    talents: list[TreeTalent] = Field(default_factory=list)
+
+
+class CatalogInfo(Strict):
+    """Where the talent data behind a build came from and how current it is."""
+
+    client_version: str = ""
+    data_status: str = "draft"
+    source: str = ""
+    source_updated: Optional[date] = None
+    retrieved_at: Optional[date] = None
+    points_per_tier: int = 5
+    notes: str = ""
+
+
 class BuildDetail(Build):
     """A build plus derived display data."""
 
@@ -167,6 +203,8 @@ class BuildDetail(Build):
     allocation_pending: bool = True
     talents: list[ResolvedTalent] = Field(default_factory=list)
     status_note: str = ""
+    trees: list[TreeView] = Field(default_factory=list, description="The class's talent trees with this build's ranks (empty without talent data).")
+    catalog_info: Optional[CatalogInfo] = None
     validation: Optional[BuildValidation] = None
 
 
@@ -194,11 +232,22 @@ class Trait(Strict):
     interpretation: LongText = Field(default="", description="Sentence used in the personality reading.")
 
 
+class SpecGuide(Strict):
+    """What a player of this specialization needs to know about roles and gear. General guidance, not an item list."""
+
+    dungeon_role: LongText = ""
+    raid_role: LongText = ""
+    note: LongText = Field(default="", description="A caveat shown with the guidance, for example that it is general rather than game-specific.")
+    gear: list[LongText] = Field(default_factory=list, description="What to look out for on gear.")
+    competes_with: list[LongText] = Field(default_factory=list, description="Which specializations compete for similar gear.")
+
+
 class Specialization(Strict):
     id: Slug
     name: ShortText
     description: LongText = ""
     overview: LongText = Field(default="", description="What this specialization does, in the quiz's own words.")
+    guide: SpecGuide = Field(default_factory=SpecGuide)
     role: Slug
     trait_multipliers: dict[Slug, Weight] = Field(
         description="Ordered trait -> multiplier map. Order is primary, secondary, tertiary ...",
@@ -236,7 +285,8 @@ class Question(Strict):
         default="choice",
         description=(
             "choice: pick one answer. pick_two: pick two of four (weights add). "
-            "scale: rate 1-10; answers 'agree' and 'disagree' define the two poles."
+            "scale: rate 1-10; answers 'agree' and 'disagree' define the two poles. "
+            "ranking: put the four answers in order. allocation: spend six points across the four answers."
         ),
     )
     low_label: Annotated[str, Field(max_length=80)] = "Strongly disagree"
@@ -325,6 +375,7 @@ class PublicQuestion(BaseModel):
     scale_min: Optional[int] = None
     scale_max: Optional[int] = None
     pick_count: Optional[int] = None
+    points: Optional[int] = Field(default=None, description="Points to spend, for 'allocation' questions.")
 
 
 class PublicQuiz(BaseModel):
@@ -490,6 +541,7 @@ class SpecPick(BaseModel):
     role: str
     score: float
     description: str
+    guide: Optional[SpecGuide] = None
     build: Optional[BuildDetail] = None
 
 
@@ -711,6 +763,7 @@ class SpecPatch(Strict):
     name: Optional[ShortText] = None
     description: Optional[LongText] = None
     overview: Optional[LongText] = None
+    guide: Optional[SpecGuide] = None
     role: Optional[Slug] = None
     trait_multipliers: Optional[dict[Slug, Weight]] = Field(
         default=None, description="Replaces the whole profile; key order is primary, secondary, tertiary ..."

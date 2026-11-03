@@ -1,4 +1,4 @@
-"""Tuning overlay for the seed quiz (seed version 1.2.0).
+"""Tuning overlay for the seed quiz (seed version 1.3.0).
 
 The original sixteen questions were written for a quiz whose trait profiles could not, under any answers, make
 some specializations win, and whose answers favoured some classes far more often than others. Under uniformly random
@@ -10,8 +10,8 @@ are checked by ``tests/test_balance.py``.
 
 Every entry is documented data, not a hidden adjustment: edit or delete any of them in the administrative interface.
 
-  TYPE_CHANGES         original questions turned into "pick two" questions (same four answers and weights; a pair's
-                       weights are the sum of its two answers').
+  TYPE_CHANGES         original questions turned into "ranking" or "allocation" questions (same four answers and
+                       weights; see scoring.py for how a ranking or a split of six points weighs them).
   ORIGINAL_CLASS_PAIRS original answers whose (primary, secondary) classes changed, to even out how often each class
                        is favoured.
   SPEC_WEIGHTS         direct specialization weights ('class/spec' keys) for answers of any question.
@@ -19,10 +19,10 @@ Every entry is documented data, not a hidden adjustment: edit or delete any of t
 from __future__ import annotations
 
 TYPE_CHANGES = {
-    "q07": ("pick_two", "Which two kinds of weather appeal to you most?"),
-    "q09": ("pick_two", "At a large festival, which two places would you most likely be found?"),
-    "q11": ("pick_two", "Which two objects would you be most likely to preserve for their beauty?"),
-    "q15": ("pick_two", "After an exceptionally difficult day, which two things would restore you most?"),
+    "q07": ("ranking", "Rank these kinds of weather from the one you would most like to the one you would least like."),
+    "q09": ("allocation", "You have six hours at a large festival. How do you divide them among these places?"),
+    "q11": ("ranking", "Rank these objects from the one you would most want to preserve for its beauty to the one you would least."),
+    "q15": ("allocation", "After an exceptionally difficult day you have six hours to yourself. How do you spend them?"),
 }
 
 ORIGINAL_CLASS_PAIRS = {
@@ -65,7 +65,7 @@ SPEC_WEIGHTS = {
     ("q25", "b"): {"druid/balance": 1, "druid/feral_combat": 1, "druid/restoration": 2, "shaman/restoration": 1},
     ("q25", "c"): {"rogue/combat": 1, "rogue/subtlety": 2},
     ("q25", "d"): {"warlock/affliction": 1},
-    ("q26", "a"): {"druid/feral_combat": 1, "hunter/beast_mastery": 2},
+    ("q26", "a"): {"druid/feral_combat": 1, "hunter/beast_mastery": 1},
     ("q26", "b"): {"rogue/combat": 2, "warlock/demonology": 1},
     ("q26", "c"): {"paladin/retribution": 1, "warrior/arms": 3},
     ("q26", "d"): {"priest/discipline": 2, "shaman/restoration": 1},

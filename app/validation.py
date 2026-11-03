@@ -76,8 +76,8 @@ def validate_config(config: Config) -> list[str]:
         answer_ids = [a.id for a in q.answers]
         if q.type == "choice" and not 2 <= n <= 8:
             errors.append(f"Question '{q.id}' (choice) has {n} answers; between 2 and 8 are required.")
-        elif q.type == "pick_two" and n != 4:
-            errors.append(f"Question '{q.id}' (pick_two) has {n} answers; exactly 4 are required.")
+        elif q.type in ("pick_two", "ranking", "allocation") and n != 4:
+            errors.append(f"Question '{q.id}' ({q.type}) has {n} answers; exactly 4 are required.")
         elif q.type == "scale":
             if sorted(answer_ids) != ["agree", "disagree"]:
                 errors.append(f"Question '{q.id}' (scale) must have exactly the answers 'agree' and 'disagree'.")

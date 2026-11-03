@@ -19,10 +19,13 @@ from .models import (
     BuildSummary,
     BuildValidation,
     CatalogClass,
+    CatalogInfo,
     CatalogTalent,
     CatalogTree,
     Config,
     ResolvedTalent,
+    TreeTalent,
+    TreeView,
 )
 
 
@@ -187,8 +190,33 @@ def validate_build(build: Build, config: Config) -> BuildValidation:
     )
 
 
-def describe_build(build: Build, config: Config, with_validation: bool = True) -> BuildDetail:
-    """Build record plus derived, display-ready fields."""
+def tree_views(build: Build, config: Config) -> list[TreeView]:
+    """The class's talent trees (in specialization order) with the build's ranks filled in; empty without talent data."""
+    cat_cls = catalog_class(config, build.class_id)
+    cls = config.get_class(build.class_id)
+    if cat_cls is None or cls is None:
+        return []
+    order = [s.id for s in cls.specializations]
+    trees = sorted(cat_cls.trees, key=lambda t: order.index(t.id) if t.id in order else 99)
+    return [
+        TreeView(
+            id=tree.id,
+            name=tree.name,
+            points=sum(build.allocations.get(t.id, 0) for t in tree.talents),
+            talents=[
+                TreeTalent(
+                    id=t.id, name=t.name, tier=t.tier, column=t.column, max_rank=t.max_rank,
+                    rank=build.allocations.get(t.id, 0), requires=t.requires, description=t.description,
+                )
+                for t in tree.talents
+            ],
+        )
+        for tree in trees
+    ]
+
+
+def describe_build(build: Build, config: Config, with_validation: bool = True, with_trees: bool = False) -> BuildDetail:
+    """Build record plus derived, display-ready fields. ``with_trees`` adds the full talent trees for drawing the build."""
     validation = validate_build(build, config)
     cls = config.get_class(build.class_id)
     tree_order = [s.id for s in cls.specializations] if cls else []
@@ -223,7 +251,19 @@ def describe_build(build: Build, config: Config, with_validation: bool = True) -
         allocation_pending=not build.allocations,
         talents=resolved,
         status_note=note,
+        trees=tree_views(build, config) if with_trees else [],
+        catalog_info=catalog_info(config) if with_trees else None,
         validation=validation if with_validation else None,
+    )
+
+
+def catalog_info(config: Config) -> Optional[CatalogInfo]:
+    cat = config.talent_catalog
+    if cat is None:
+        return None
+    return CatalogInfo(
+        client_version=cat.client_version, data_status=cat.data_status, source=cat.source, source_updated=cat.source_updated,
+        retrieved_at=cat.retrieved_at, points_per_tier=cat.points_per_tier, notes=cat.notes,
     )
 
 

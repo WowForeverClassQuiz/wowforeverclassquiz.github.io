@@ -37,8 +37,10 @@ def test_quiz_endpoint_does_not_reveal_scoring_data(client):
     by_type = {}
     for q in body["questions"]:
         by_type.setdefault(q["type"], []).append(q)
-    assert {k: len(v) for k, v in by_type.items()} == {"choice": 15, "scale": 8, "pick_two": 7}
+    assert {k: len(v) for k, v in by_type.items()} == {"choice": 15, "scale": 8, "pick_two": 2, "ranking": 3, "allocation": 2}
     assert all(len(q["answers"]) == 4 for q in by_type["pick_two"]) and all(q["pick_count"] == 2 for q in by_type["pick_two"])
+    assert all(len(q["answers"]) == 4 and q["points"] is None for q in by_type["ranking"])
+    assert all(len(q["answers"]) == 4 and q["points"] == 6 for q in by_type["allocation"])
     assert sum(1 for q in by_type["choice"] if len(q["answers"]) == 4) == 12 and sum(1 for q in by_type["choice"] if len(q["answers"]) == 2) == 3
     for q in by_type["scale"]:                       # the agree/disagree poles are scoring data and are never sent
         assert q["answers"] == [] and q["scale_min"] == 1 and q["scale_max"] == 10 and q["low_label"] and q["high_label"]
@@ -77,11 +79,11 @@ def test_evaluate_returns_the_documented_structure(client, druid_answers):
     assert len(body["rankings"]["classes"]) == 9 and len(body["rankings"]["traits"]) == 12
     assert len(body["rankings"]["specializations"]) == 3
     assert len(body["explanation"]["questions"]) == 30
-    assert {q["question_type"] for q in body["explanation"]["questions"]} == {"choice", "scale", "pick_two"}
+    assert {q["question_type"] for q in body["explanation"]["questions"]} == {"choice", "scale", "pick_two", "ranking", "allocation"}
     assert body["alternatives"]["alternative_class"]["id"]
     assert body["metadata"]["config_revision"] == 1 and body["metadata"]["spec_weight_multiplier"] == 5.0
     assert body["metadata"]["complete"] is True
-    assert body["result"]["build"]["status"] == "pending"
+    assert body["result"]["build"]["status"] == "draft" and body["result"]["build"]["trees"]
     # the "what the class does" paragraphs and their source link travel with the result
     assert body["result"]["class_overview"].startswith("Druids are") and "Feral Combat" not in body["result"]["class_overview"][:0]
     assert "cat" in body["result"]["specialization_overview"]
@@ -132,7 +134,7 @@ def test_config_endpoint_returns_complete_scoring_data(client):
     assert scale["type"] == "scale" and [a["id"] for a in scale["answers"]] == ["agree", "disagree"]
     assert scale["answers"][0]["spec_weights"] == {"warrior/protection": 2.0, "paladin/protection": 1.0}
     assert scale["rationale"]
-    assert cfg["scoring"]["spec_weight_multiplier"] == 5.0 and cfg["scoring"]["algorithm_version"] == "1.2.0"
+    assert cfg["scoring"]["spec_weight_multiplier"] == 5.0 and cfg["scoring"]["algorithm_version"] == "1.3.0"
     assert cfg["classes"][0]["overview"] and cfg["classes"][0]["specializations"][0]["overview"]
     assert cfg["classes"][0]["specializations"][1]["trait_multipliers"] == {"wild": 1.5, "instinct": 1.0, "freedom": 0.45}
     assert cfg["scoring"]["class_tie_break_order"][0] == "druid"
@@ -422,7 +424,7 @@ def test_history_snapshot_can_be_restored(client):
 def test_health_endpoint(client):
     body = client.get(f"{API}/health").json()
     assert body["status"] == "ok" and body["class_count"] == 9 and body["specialization_count"] == 27
-    assert body["algorithm_version"] == "1.2.0" and body["question_count"] == 30
+    assert body["algorithm_version"] == "1.3.0" and body["question_count"] == 30
 
 
 def test_openapi_documentation_is_available_and_complete(client):

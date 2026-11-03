@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS specializations (
     role          TEXT NOT NULL,
     display_order INTEGER NOT NULL,
     overview      TEXT NOT NULL DEFAULT '',
+    guide         TEXT NOT NULL DEFAULT '',
     PRIMARY KEY (class_id, id)
 );
 
@@ -185,6 +186,7 @@ _ADDED_COLUMNS = (
     ("classes", "overview", "TEXT NOT NULL DEFAULT ''"),
     ("classes", "overview_url", "TEXT NOT NULL DEFAULT ''"),
     ("specializations", "overview", "TEXT NOT NULL DEFAULT ''"),
+    ("specializations", "guide", "TEXT NOT NULL DEFAULT ''"),
 )
 
 

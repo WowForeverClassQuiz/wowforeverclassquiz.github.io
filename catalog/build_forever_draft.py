@@ -893,6 +893,7 @@ catalog_dict = {
     "client_version": "UNVERIFIED-DRAFT (beta 1.60.1 + dev notes of 2026-11-02)",
     "source": "GuildOrder WoW Forever talent pages (reviewed Oct 2026) reconciled with Blizzard beta development notes updated Nov 2, 2026",
     "retrieved_at": "2026-11-03",
+    "source_updated": "2026-11-02",
     "data_status": "draft",
     "notes": NOTES,
     "points_per_tier": 5,

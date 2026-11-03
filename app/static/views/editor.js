@@ -1,5 +1,5 @@
 // Question Editor: inspect and edit every answer's class, trait and direct specialization weights.
-// Handles choice, pick-two and 1-10 scale questions. Edits are drafts until saved.
+// Handles choice, pick-two, ranking, point-allocation and 1-10 scale questions. Edits are drafts until saved.
 import { h, clear, signed, toast, confirmDialog, errorList, badge, debounce } from "../ui.js";
 import { get, patch, post } from "../api.js";
 import { state, ensureConfig } from "../state.js";
@@ -20,10 +20,12 @@ const specItems = () => cfg.classes.flatMap((c) => c.specializations.map((s) => 
 const specIds = () => specItems().map((s) => s.id);
 const specName = (key) => { const it = specItems().find((s) => s.id === key); return it ? `${cfg.classes.find((c) => c.id === it.classId).name} · ${it.name}` : key; };
 
-const TYPE_NAMES = { choice: "Choice", pick_two: "Pick two", scale: "Scale 1–10" };
+const TYPE_NAMES = { choice: "Choice", pick_two: "Pick two", scale: "Scale 1–10", ranking: "Ranking", allocation: "Spend 6 points" };
 const TYPE_HELP = {
   choice: "The participant picks one answer. The baseline for each class, trait and specialization is its average weight across the answers.",
   pick_two: "The participant picks two of the four items. A pair's weights are the SUM of its two items' weights; the baseline is the average over all six possible pairs.",
+  ranking: "The participant puts the four items in order. The item ranked first counts 1.5 times its weights, second 1, third 0.5 and last 0. The baseline is the average over all 24 possible orderings.",
+  allocation: "The participant spends six points across the four items. An item given p points counts p / 3 times its weights. The baseline is the average over all 84 possible splits.",
   scale: "The participant rates the statement 1–10. A rating r becomes s = (r − 5.5) / 4.5 (from −1 to +1): ratings above the middle blend in the AGREE pole, ratings below it the DISAGREE pole, in proportion to s. The baseline is the average over all ten ratings, so a neutral respondent contributes about zero.",
 };
 
@@ -69,7 +71,7 @@ async function selectQuestion(id) {
 
 function answerTitle(q, a) {
   if (q.type === "scale") return a.id === "agree" ? "Agree pole (toward 10)" : "Disagree pole (toward 1)";
-  if (q.type === "pick_two") return `Item ${a.id.toUpperCase()}`;
+  if (["pick_two", "ranking", "allocation"].includes(q.type)) return `Item ${a.id.toUpperCase()}`;
   return `Answer ${a.id.toUpperCase()}`;
 }
 
@@ -268,6 +270,15 @@ function matrixTable(title, rows, ex, kind) {
   const touched = rows.filter(([id]) => base[id] || ex.options.some((o) => o[`${kind}_raw`][id]));
   if (!touched.length) return h("div", { style: { marginBottom: "12px" } }, h("h4", {}, title), h("p", { class: "muted", style: { fontSize: "0.88rem" } }, "No weights set."));
   const head = (o) => (ex.type === "scale" ? o.id : o.id.toUpperCase());
+  const cell = (o, id) => { const v = o[`${kind}_adjusted`][id] || 0; return h("td", { class: `num ${v > 1e-9 ? "pos" : v < -1e-9 ? "neg" : "zero"}`, title: `${o.label} → raw weight ${(o[`${kind}_raw`][id] || 0).toFixed(2)}` }, signed(v, 2)); };
+  if (ex.options.length > 12) {   // many responses (rankings, splits of points): one row per response keeps the table readable
+    return h("div", { style: { marginBottom: "14px" } }, h("h4", {}, title),
+      h("div", { class: "table-wrap", style: { maxHeight: "340px", overflow: "auto" } }, h("table", {},
+        h("thead", {}, h("tr", {}, h("th", {}, "Response"), touched.map(([, name]) => h("th", { class: "num" }, name)))),
+        h("tbody", {},
+          ex.options.map((o) => h("tr", {}, h("td", { title: o.label }, head(o)), touched.map(([id]) => cell(o, id)))),
+          h("tr", {}, h("td", { title: "Average weight over all responses; subtracted from each response" }, h("b", {}, "Baseline")), touched.map(([id]) => h("td", { class: "num" }, (base[id] || 0).toFixed(3))))))));
+  }
   return h("div", { style: { marginBottom: "14px" } }, h("h4", {}, title),
     h("div", { class: "table-wrap" }, h("table", {},
       h("thead", {}, h("tr", {}, h("th", {}, ""), ex.options.map((o) => h("th", { class: "num", title: o.label }, head(o))), h("th", { class: "num", title: "Average weight over all responses; subtracted from each response" }, "Baseline"))),

@@ -1,5 +1,8 @@
 """Install the DRAFT Forever talent catalog and the 27 draft builds into the application database.
 
+The seed configuration already includes them (app/drafts.py), so a new or untouched database has them; use this to add
+them to a database you have edited.
+
     python catalog/install_drafts.py                 # uses $ORACLE_DB or data/oracle.db (created if missing)
     python catalog/install_drafts.py --db other.db
 
@@ -10,19 +13,16 @@ marked draft is never overwritten unless --force is given. Nothing installed her
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
-from app.models import Build, TalentCatalog  # noqa: E402
+from app.drafts import load_drafts  # noqa: E402
 from app.repository import ConfigInvalid, Repository  # noqa: E402
 
 DEFAULT_DB = HERE.parent / "data" / "oracle.db"   # same default as app.main (not imported: importing it would create the database)
-CATALOG = HERE / "forever-talents-draft-2026-11-03.json"
-BUILDS = HERE / "forever-builds-draft-2026-11-03.json"
 
 
 def main(argv=None) -> int:
@@ -40,8 +40,7 @@ def main(argv=None) -> int:
         print(f"Refusing to replace the existing non-draft talent catalog ({cfg.talent_catalog.client_version}). Use --force to override.", file=sys.stderr)
         return 2
 
-    cfg.talent_catalog = TalentCatalog.model_validate(json.loads(CATALOG.read_text(encoding="utf-8")))
-    new = [Build.model_validate(b) for b in json.loads(BUILDS.read_text(encoding="utf-8"))]
+    cfg.talent_catalog, new = load_drafts()
     replaced_ids = {b.id for b in new}
     kept = [b for b in cfg.builds if b.id not in replaced_ids]
     foreign_defaults = {(b.class_id, b.specialization_id) for b in kept if b.is_default}

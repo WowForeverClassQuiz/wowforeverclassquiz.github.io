@@ -16,9 +16,9 @@
   const btn = (text, i = 0) => [...document.querySelectorAll("button")].filter((b) => b.textContent.trim() === text)[i];
   const go = async (hash, ms = 1100) => { location.hash = hash; await sleep(ms); };
   // A fixed answer set for all thirty questions -> Druid / Feral Combat on the seed configuration (the same set as tests/conftest.py;
-  // seven questions are pick-two, whose answers are pairs).
-  const ANSWERS = { q01: "a", q02: "c", q03: "c", q04: "a", q05: "c", q06: "d", q07: "b+c", q08: "d", q09: "a+d", q10: "a", q11: "a+c", q12: "b", q13: "d", q14: "c",
-    q15: "a+b", q16: "c", q17: "6", q18: "1", q19: "10", q20: "10", q21: "5", q22: "10", q23: "1", q24: "5", q25: "b+c", q26: "a+b", q27: "b+d", q28: "b", q29: "b", q30: "b" };
+  // two questions are pick-two (pairs), three are rankings (orderings) and two spend six points (splits)).
+  const ANSWERS = { q01: "a", q02: "c", q03: "c", q04: "a", q05: "c", q06: "d", q07: "b>c>a>d", q08: "d", q09: "3-0-0-3", q10: "a", q11: "a>c>b>d", q12: "b", q13: "d", q14: "c",
+    q15: "3-3-0-0", q16: "c", q17: "6", q18: "1", q19: "10", q20: "10", q21: "5", q22: "10", q23: "1", q24: "5", q25: "b+c", q26: "a>b>c>d", q27: "b+d", q28: "b", q29: "b", q30: "b" };
   const N = 30;
   /** Give the question currently on screen its response through the real controls. */
   const respond = async (q, value) => {
@@ -26,13 +26,19 @@
       const want = value.split("+");
       for (const box of [...document.querySelectorAll("input[type=checkbox]:checked")]) { if (!want.includes(box.value)) { box.click(); await sleep(20); } }   // release first: a third box is locked
       for (const id of want) { const box = document.querySelector(`input[type=checkbox][value="${id}"]`); if (!box.checked) box.click(); await sleep(20); }
+    } else if (q.type === "ranking") {
+      for (let box; (box = document.querySelector("input[type=checkbox]:checked")); ) { box.click(); await sleep(15); }          // undo any ranking first
+      for (const id of value.split(">")) { document.querySelector(`input[type=checkbox][value="${id}"]`).click(); await sleep(15); }
+    } else if (q.type === "allocation") {
+      for (let b; (b = document.querySelector('[data-alloc$=":-"]:not(:disabled)')); ) { b.click(); await sleep(10); }          // take every point back first
+      for (const [i, p] of value.split("-").map(Number).entries()) for (let k = 0; k < p; k++) { document.querySelector(`[data-alloc="${i}:+"]`).click(); await sleep(10); }
     } else {
       document.querySelector(`input[type=radio][value="${value}"]`).click();
     }
     await sleep(25);
   };
 
-  // ---- 1. all thirty questions are accessible, in all three types -------------------------------------------------
+  // ---- 1. all thirty questions are accessible, in all five types -------------------------------------------------
   await go("#/", 500);
   const quiz = await api("/quiz");
   document.getElementById("begin").click(); await sleep(100);
@@ -43,11 +49,13 @@
   for (let k = 0; k < N; k++) {
     document.querySelectorAll(".dots button")[k].click(); await sleep(30);
     const q = quiz.questions[k];
-    const controls = q.type === "scale" ? document.querySelectorAll(".scale-opt input").length : document.querySelectorAll(".answer input").length;
-    if (document.querySelector(".question").textContent === q.text && controls === (q.type === "scale" ? 10 : q.answers.length)) { reachable++; seen.add(q.type); }
+    const controls = q.type === "scale" ? document.querySelectorAll(".scale-opt input").length : q.type === "allocation" ? document.querySelectorAll(".alloc-row").length : document.querySelectorAll(".answer input").length;
+    const view = document.getElementById("view").innerText;
+    if (/\bnull\b/.test(view)) check(`question ${q.id} shows no stray "null"`, false, view.slice(0, 80));
+    if (document.querySelector(".question").textContent === q.text && controls === (q.type === "scale" ? 10 : q.answers.length) && document.querySelector(".eyebrow-q")?.textContent) { reachable++; seen.add(q.type); }
   }
-  check("every question opens with the right controls (4/2 answers, 10 ratings, or 4 pick-two items)", reachable === N, reachable);
-  check("all three question types are present", seen.size === 3, [...seen].join(","));
+  check("every question opens with the right controls and a type label, and no stray \"null\"", reachable === N && !results.some((r) => r.result === "FAIL"), reachable);
+  check("all five question types are present", seen.size === 5, [...seen].join(","));
 
   // ---- 2. navigation preserves answers ---------------------------------------------------------
   document.querySelectorAll(".dots button")[0].click(); await sleep(50);
@@ -84,6 +92,13 @@
   document.getElementById("reveal").click(); await sleep(2200);
   const apiResult = await api("/evaluate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ answers, include_explanation: true }) });
   check("Result shows the class and specialization paragraphs", document.body.innerText.includes("What the Druid does") && document.body.innerText.includes(apiResult.result.specialization_overview.slice(0, 30)));
+  const text = document.body.innerText;
+  check("the build is drawn as three talent trees with talents filled in", document.querySelectorAll(".talent-tree").length === 3 && document.querySelectorAll(".talent.some, .talent.max").length > 5, document.querySelectorAll(".talent.some, .talent.max").length);
+  check("the build is shown although it is not verified, and says so", /Draft - not verified/.test(text) && !!document.querySelector(".talent-trees"));
+  check("the build warns it may be out of date and gives the date of the talent data", /may not match the current World of Warcraft: Forever talent trees/.test(text) && /last updated\s*November 2, 2026/.test(text));
+  check("the role in dungeons and raids, gear to look for and competing specs are shown", ["in dungeons", "in raids", "gear to look out for", "who competes with you for gear"].every((s) => text.toLowerCase().includes(s)));
+  check("the class icon and a spell icon head the result", document.querySelectorAll(".hero-icons .wow-icon").length === 2, document.querySelectorAll(".hero-icons .wow-icon").length);
+  check("the result page shows no stray \"null\"", !/\bnull\b/.test(text));
   check("Result class and specialization match the API",
     document.querySelector(".result-hero h1").textContent === apiResult.result.primary_class.name &&
     document.querySelector(".result-hero h2").textContent === apiResult.result.primary_specialization.name,

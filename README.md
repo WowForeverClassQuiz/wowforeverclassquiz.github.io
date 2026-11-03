@@ -1,7 +1,7 @@
 # World of Warcraft: Forever - Character Oracle
 
 A personality quiz that recommends a **class, specialization and talent build** for
-*World of Warcraft: Forever*. Thirty indirect questions of three kinds (pick one, rate 1-10, pick two) are
+*World of Warcraft: Forever*. Thirty indirect questions of five kinds (pick one, rate 1-10, pick two, rank four, spend six points) are
 scored with a transparent, deterministic algorithm. It comes in two editions that share one scoring engine:
 
 * **Local app** (run with Python, below): the quiz plus an administrative dashboard. Nothing leaves your machine.
@@ -12,29 +12,37 @@ scored with a transparent, deterministic algorithm. It comes in two editions tha
 * **Static website** (`python tools/build_static.py`): only the quiz, as plain files for GitHub Pages or any static host,
   scored in the visitor's browser. See [Publish it as a website](#publish-it-as-a-website).
 
-Every specialization of every class can be the result, and under random answers each one wins at least a quarter of its
+Every specialization of every class can be the result, and under random answers each one wins at least 23% of its
 class's results; see [Balance](#balance-algorithm-120).
 
 ## Status of the talent builds (read this)
 
 The scoring engine, API and interface are complete and tested. **The talent data is a hand-built draft, and no build is verified.**
 
-* The application ships **no data read from the World of Warcraft: Forever client**. All 27 specializations start with a
-  placeholder build (`status: pending`, no allocation); the participant sees "Talent allocation pending".
-* [catalog/forever-talents-draft-2026-11-03.json](catalog/forever-talents-draft-2026-11-03.json) is a **draft catalog of all 27 trees
-  (468 talents)** you can import in *Admin > Build Editor > Talent data*. It was assembled on 2026-11-03 from
-  GuildOrder's Forever talent pages (reviewed October 2026) plus Blizzard's *Beta Development Notes, updated November 2*
-  (the developer post stamped 2026-11-03 03:20), which lists changes only. `catalog/build_forever_draft.py` rebuilds it and checks
+* **Every result shows a build**, even though none is verified: the draft catalog and 27 draft builds ship with the application
+  ([app/drafts.py](app/drafts.py)) and are part of the seed, so a new database and the published website both have them. Each build is
+  labelled "Draft - not verified", the page says it **may not match the current World of Warcraft: Forever talent trees**, and it gives the
+  date the talent tree data was last updated (**November 2, 2026**, the date of Blizzard's Beta Development Notes it reflects; the data was
+  compiled on November 3, 2026).
+* The build is drawn as the class's **three talent trees**, laid out like the in-game talent window: rows by tier, a rank badge on every
+  talent (`2/5`), unspent talents dimmed, maxed talents green, with the tree of your specialization highlighted. The source data gives each
+  talent's row and ranks but not its exact column, so a talent's position *within* its row is approximate; the page says so.
+* Each result also carries a **role and gear guide** for the specialization ([app/spec_guides.py](app/spec_guides.py)): its role in dungeons and in
+  raids, what to look out for on gear, and which specializations compete with it for similar gear. This is *general guidance* for how those roles and
+  gear types work in Classic-style World of Warcraft, written for this project; it was not read from Forever's item list and says so on the page.
+* The application ships **no data read from the World of Warcraft: Forever client**. [catalog/forever-talents-draft-2026-11-03.json](catalog/forever-talents-draft-2026-11-03.json)
+  is a **draft catalog of all 27 trees (468 talents)**, assembled on 2026-11-03 from GuildOrder's Forever talent pages (reviewed October 2026) plus
+  Blizzard's *Beta Development Notes, updated November 2*, which lists changes only. `catalog/build_forever_draft.py` rebuilds it and checks
   109 structural claims from the notes; [catalog/RECONCILIATION.md](catalog/RECONCILIATION.md) records which the source already
-  contained (62) and which were applied by hand (47: Rogue, Warrior and Shaman).
+  contained (62) and which were applied by hand (47: Rogue, Warrior and Shaman). You can also import a catalog in *Admin > Build Editor > Talent data*.
 * Draft data is flagged `data_status: "draft"`. Allocations are validated against it (point total, ranks, row gates, and the
   prerequisites the notes state), but **the server refuses to mark any build `verified` against draft data**.
 * Known gaps in the draft: the source shows no talent-to-talent prerequisites (only 6 are recorded, from the notes); `column`
   is list order, not the real grid; percentage-only changes are not modelled; the pages were read through a summarising
   fetch tool; and a few notes entries are ambiguous (listed in the ledger). Replace the draft with a client export when you have one.
 * [catalog/forever-builds-draft-2026-11-03.json](catalog/forever-builds-draft-2026-11-03.json) holds **27 best-guess leveling / general-PvE
-  builds, one per specialization**, each a full 51-point allocation with a legal point-by-point leveling order. Load the draft
-  catalog and builds into your database with one command (it writes one revision and backs up the old configuration first):
+  builds, one per specialization**, each a full 51-point allocation with a legal point-by-point leveling order. They are in the seed already; to
+  add them to a database whose configuration you have edited (it writes one revision and backs up the old configuration first):
 
   ```bash
   python catalog/install_drafts.py
@@ -43,12 +51,16 @@ The scoring engine, API and interface are complete and tested. **The talent data
   How they were made: RankedBoost's WoW Forever build pages (build 1.60.1.70707, "updated November 2") are the model: its leveling build
   where one exists, otherwise its PvE damage, healing or tank build. Rogue Subtlety has only a PvP source, so that build is my own
   extrapolation and the least trustworthy. RankedBoost still uses some pre-patch talents, so every build was remapped onto the new
-  trees (removed talents dropped, ranks capped, moved talents taken from their new tree). Reddit and other forums could not be read
-  by the tools I had, so no community consensus is reflected beyond RankedBoost and the guide sites. Each build is `draft`, is
-  checked as *legal* on the draft catalog, and says so on its record; that proves legality in unverified data, not quality.
-  Guidance text is limited to what follows from the talents taken: no rotations, stat priorities or professions are invented.
+  trees (removed talents dropped, ranks capped, moved talents taken from their new tree). Reddit and other forums could not be read by the
+  tools I had, so no community consensus is reflected beyond RankedBoost and the guide sites. Each build is `draft`, is checked as *legal* on the
+  draft catalog, and says so on its record; that proves legality in unverified data, not quality.
 * The test suite also uses a small *synthetic* catalog to exercise the validator. Its names are invented and it is never loaded
   by the application.
+
+**Class and spell icons.** Each result page shows the class emblem and an iconic spell of the specialization (for example Cat Form for Feral Combat),
+and the class icon beside each class in the score chart. These are Blizzard's artwork. They are **not stored in this repository**: visitors' browsers load
+them from Wowhead's public icon server (`wow.zamimg.com`), which means that server sees the visitor's address when an icon loads. If an icon cannot
+load, a coloured badge takes its place. To host them yourself or drop them, change `ICON_BASE` in [app/static/icons.js](app/static/icons.js).
 
 ## Install and run
 
@@ -158,14 +170,18 @@ Close call" is a heuristic based on the gap between the top two classes, not a s
    `S_c = sum of delta(q, c)` over the questions.
 
    Example: Q01 answer A gives Druid `2 - 0.5 = +1.5`, Hunter `1 - 0.25 = +0.75`, Mage `0 - 0.5 = -0.5`.
-   For every pick-one or pick-two question the contributions sum to zero.
+   For every question the contributions of all its possible responses average to zero.
 
-   **Question types.** *Choice* (the original sixteen, plus three "this or that" questions with two answers),
-   *pick two* (choose two of four items; a pair's weights are the sum of its items', the baseline is the mean over the
-   six possible pairs) and *scale* (rate a statement 1-10). A scale question defines two poles, **agree** and **disagree**.
+   **Question types.** *Choice* (most of the original sixteen, plus three "this or that" questions with two answers),
+   *pick two* (choose two of four items; a pair's weights are the sum of its items', the baseline is the mean over the six possible pairs),
+   *ranking* (put four items in order: the item ranked first counts 1.5 times its weights, second 1, third 0.5, last 0; 24 possible orderings),
+   *allocation* (spend six points across four items; an item given `p` points counts `p / 3` times its weights; 84 possible splits) and
+   *scale* (rate a statement 1-10). A scale question defines two poles, **agree** and **disagree**.
    A rating `r` gives `s = (r - 5.5) / 4.5`, from -1 to +1, and the response carries `max(s, 0) x agree + max(-s, 0) x disagree`.
    So a strong "disagree" counts toward the disagree pole instead of counting for nothing, and a neutral respondent
-   contributes about zero, because the baseline is again the mean over all ten ratings.
+   contributes about zero, because the baseline is again the mean over all ten ratings. In every type the baseline is the mean over **all
+   possible responses**, so no question can favour a class on average. Only two questions are pick-two; the rest of the "choose some of these"
+   questions are rankings and point splits, which carry more information per question.
 2. **Trait score.** The same normalization over the twelve personality traits gives `T_t`.
    Raw counts (how often a trait appeared) are reported separately.
 3. **Specialization score.** `P_s = sum of multiplier x T_trait + m x sum of delta_spec(q, s)`: the trait profile
@@ -207,29 +223,29 @@ Pick the lightest level that does the job.
    only used for a fresh database or a reset. Update the matching expectations in `tests/test_scoring.py`.
 
 `expected_question_count` (30) lives in the configuration's `quiz` block and the validator enforces it, so changing the
-number of questions is a deliberate edit of that block plus the questions. Choice questions need 2 to 8 answers, pick-two
-exactly 4, and scale questions exactly the two answers `agree` and `disagree`.
+number of questions is a deliberate edit of that block plus the questions. Choice questions need 2 to 8 answers, pick-two, ranking
+and allocation questions exactly 4, and scale questions exactly the two answers `agree` and `disagree`.
 
 ### Balance (algorithm 1.2.0)
 
 The requirement: **every class reachable, and every specialization the recommendation at least 20% of the time within its
 own class when the answers are random.** "Random" here means every question answered uniformly at random over its possible
 responses (each of the ten ratings, each answer, each of the six pairs). It is a diagnostic of the scoring rules, not a model of
-real people, who do not answer uniformly. Measured on 100,000 random answer sets (`python tools/balance.py report --n 100000 --seed 4242`):
+real people, who do not answer uniformly. Measured on 100,000 random answer sets (`python tools/balance.py report --n 100000 --seed 4242`; for a ranking or an allocation every one of the 24 or 84 possible responses is equally likely):
 
 | Class | Result share | Its specializations' shares within the class |
 |---|---|---|
-| Druid | 11.0% | Balance 32.8% · Feral Combat 30.0% · Restoration 37.2% |
-| Hunter | 10.0% | Beast Mastery 39.4% · Marksmanship 30.1% · Survival 30.5% |
-| Mage | 13.0% | Arcane 42.8% · Fire 27.8% · Frost 29.5% |
-| Paladin | 10.8% | Holy 30.6% · Protection 36.8% · Retribution 32.6% |
-| Priest | 11.8% | Discipline 29.7% · Holy 43.7% · Shadow 26.6% |
-| Rogue | 11.8% | Assassination 30.4% · Combat 29.8% · Subtlety 39.8% |
-| Shaman | 10.3% | Elemental 33.5% · Enhancement 33.4% · Restoration 33.1% |
-| Warlock | 11.3% | Affliction 37.2% · Demonology 31.5% · Destruction 31.3% |
-| Warrior | 10.0% | Arms 31.4% · Fury 37.8% · Protection 30.8% |
+| Druid | 11.1% | Balance 36.1% · Feral Combat 28.8% · Restoration 35.1% |
+| Hunter | 10.0% | Beast Mastery 36.1% · Marksmanship 32.0% · Survival 31.9% |
+| Mage | 13.2% | Arcane 42.7% · Fire 25.9% · Frost 31.4% |
+| Paladin | 10.6% | Holy 30.9% · Protection 36.0% · Retribution 33.1% |
+| Priest | 11.8% | Discipline 33.4% · Holy 42.8% · Shadow 23.8% |
+| Rogue | 12.1% | Assassination 29.1% · Combat 31.0% · Subtlety 40.0% |
+| Shaman | 9.9% | Elemental 32.3% · Enhancement 34.7% · Restoration 33.0% |
+| Warlock | 11.1% | Affliction 37.4% · Demonology 31.6% · Destruction 31.0% |
+| Warrior | 10.2% | Arms 33.4% · Fury 37.7% · Protection 28.9% |
 
-The lowest share is 26.6% (Priest Shadow) and the highest 43.7%; classes range from 10.0% to 13.0% (an even split is 11.1%).
+The lowest share is 23.8% (Priest Shadow) and the highest 42.8% (Mage Arcane); classes range from 9.9% to 13.2% (an even split is 11.1%).
 `tests/test_balance.py` enforces at least 20% per specialization and 8-15% per class on a fixed seed, and `tests/test_question_types.py`
 checks by search that answers exist for all 27 specializations.
 
@@ -238,7 +254,7 @@ specializations win at all, and some classes were favoured far more than others 
 classes 8.5-14.5%). The fix is data, listed in [app/seed_tuning.py](app/seed_tuning.py) rather than hidden in code, and found with
 `tools/balance.py` plus a greedy search that was then reviewed by hand against each answer's meaning:
 
-* four original questions became **pick-two** with their answers unchanged (Q07 weather, Q09 festival, Q11 objects, Q15 restoring a hard day);
+* four original questions changed type with their answers unchanged: Q07 (weather) and Q11 (objects kept for their beauty) became **rankings**, Q09 (a festival) and Q15 (restoring a hard day) became **six-point splits**;
 * eight original answers have a different (primary, secondary) class pair, to even out how often each class is favoured;
 * **direct specialization weights** were added to 42 answers (eight of them answers of original questions) and the multiplier raised from 3.0 to 5.0;
 * the trait weights of the original sixteen questions and the class pairs of the other answers are untouched; five original
@@ -326,10 +342,10 @@ most points and the build's role must fit the specialization.
 pytest
 ```
 
-180 automated tests cover scoring (normalization, ties, determinism, weight edits), the API (privacy of
+208 automated tests cover scoring (normalization, ties, determinism, weight edits), the API (privacy of
 `/quiz`, edits, persistence across restart, simulation purity, revision conflicts, import/export/reset),
 build validation (51 points, ranks, prerequisites, role consistency, verification rules), the draft talent catalog and the 27 draft builds
-with their installer, the **balance** of the seed quiz (`tests/test_balance.py`), and the **static edition**: the JavaScript engine against
+with their installer, the guides, drawn talent trees and icons that the result page shows, the **balance** of the seed quiz (`tests/test_balance.py`), and the **static edition**: the JavaScript engine against
 the Python engine and the live API (`tests/test_static_parity.py`, needs `node`, skipped without it) and the site builder
 (`tests/test_build_static.py`).
 
@@ -352,11 +368,14 @@ app/seed.py         original questions, weights, profiles, placeholder builds
 app/seed_tuning.py  the documented balance overlay applied to the seed (type changes, class pairs, direct weights)
 app/validation.py   cross-reference checks for a whole configuration
 app/public.py       the participant view (questions, builds) shared by the API and the static export
+app/drafts.py       loads the shipped draft talent catalog and builds into the seed
+app/spec_guides.py role and gear guidance for each specialization
 app/static_export.py  exports a configuration as the data file of the static site
 app/builds.py       build validation and presentation
 app/database.py     SQLite schema and transactions
 app/repository.py   configuration storage, revisions, backups
-app/static/         browser interface (plain ES modules, no build step); engine.js is the in-browser scoring engine
+app/static/         browser interface (plain ES modules, no build step); engine.js is the in-browser scoring engine,
+                    icons.js maps classes and specializations to their icons, talenttree.js draws a build
 catalog/            draft Forever talent catalog and 27 draft builds, their build scripts, installer and reconciliation ledger
 tools/balance.py    balance report / parity / tuning (developer tool, needs numpy: requirements-dev.txt)
 tools/build_static.py  builds the static website into ./site

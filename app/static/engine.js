@@ -246,6 +246,7 @@ export function evaluate(c, answers, { allowPartial = false } = {}) {
       class_id: c.classes[ci].id, class_name: c.classes[ci].name, id: row.id, name: row.name, role: row.role,
       score: row.score, description: s.description,
     };
+    if (s.guide) out.guide = s.guide;                              // roles and gear guidance, when the specialization has any
     const build = c.builds[`${c.classes[ci].id}/${row.id}`];
     if (build) out.build = build;                                   // display only, as the API's with_builds()
     return out;

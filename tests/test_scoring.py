@@ -135,12 +135,12 @@ def test_seed_has_thirty_questions_and_the_original_sixteen_keep_their_four_answ
     for q in [x for x in config.questions if x.id <= "q16"]:
         assert [a.id for a in q.answers] == ["a", "b", "c", "d"], q.id
         assert q.type == (TYPE_CHANGES[q.id][0] if q.id in TYPE_CHANGES else "choice"), q.id
-    assert Counter(q.type for q in config.questions) == {"choice": 15, "scale": 8, "pick_two": 7}
+    assert Counter(q.type for q in config.questions) == {"choice": 15, "scale": 8, "pick_two": 2, "ranking": 3, "allocation": 2}
 
 
-def test_new_questions_cover_the_three_types_and_every_class_and_specialization(config):
+def test_new_questions_cover_the_question_types_and_every_class_and_specialization(config):
     new = [q for q in config.questions if q.id > "q16"]
-    assert Counter(q.type for q in new) == {"scale": 8, "pick_two": 3, "choice": 3}
+    assert Counter(q.type for q in new) == {"scale": 8, "pick_two": 2, "ranking": 1, "choice": 3}
     for q in new:
         if q.type == "scale":
             assert [a.id for a in q.answers] == ["agree", "disagree"] and q.low_label and q.high_label
@@ -280,8 +280,8 @@ def test_evaluation_is_deterministic(config, druid_answers):
 def test_known_answer_set_produces_known_result(config, druid_answers):
     ev = evaluate(config, druid_answers)
     assert (ev.result.primary_class.id, ev.result.primary_specialization.id) == ("druid", "feral_combat")
-    assert [r.id for r in ev.rankings.classes][:2] == ["druid", "shaman"]
-    assert ev.alternatives.alternative_class.id == "shaman"
+    assert [r.id for r in ev.rankings.classes][:2] == ["druid", "hunter"]
+    assert ev.alternatives.alternative_class.id == "hunter"
     assert ev.metadata.complete and not ev.metadata.provisional
 
 
