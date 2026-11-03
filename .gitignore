@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.DS_Store
+.claude/
+
+# Your local database (it holds your own admin edits) and backups.
+data/
+
+# Output of tools/build_static.py; the GitHub Actions workflow builds it.
+site/

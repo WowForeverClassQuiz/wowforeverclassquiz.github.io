@@ -1,0 +1,3 @@
+# Everything for development: the application plus the optional balance-tuning tool (tools/balance.py).
+-r requirements.txt
+numpy>=1.26

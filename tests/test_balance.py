@@ -1,0 +1,101 @@
+"""The seed quiz must stay balanced, and every tuning edit must be documented and sensible.
+
+"Under random answers" means every question is answered uniformly at random over its possible responses. These shares are
+diagnostics of the scoring rules, not probabilities of real people's results.
+"""
+from collections import Counter, defaultdict
+
+import pytest
+
+from app import seed_tuning
+from app.scoring import batch_simulate
+from app.seed import QUESTIONS, build_default_config
+
+MIN_SPEC_SHARE = 0.20          # the requirement: a specialization wins at least this share of its class's results
+CLASS_BAND = (0.08, 0.15)      # no class should be starved or dominant (an even split is 1/9 = 11.1%)
+
+
+@pytest.fixture(scope="module")
+def shares():
+    cfg = build_default_config()
+    batch = batch_simulate(cfg, 12000, seed=20261104).baseline
+    class_count = {r.id: r.count for r in batch.class_frequencies}
+    spec = defaultdict(dict)
+    for r in batch.specialization_frequencies:
+        spec[r.class_id][r.id] = r.count / max(1, class_count[r.class_id])
+    return {"class": {r.id: r.frequency for r in batch.class_frequencies}, "spec": dict(spec)}
+
+
+def test_every_specialization_wins_at_least_twenty_percent_of_its_class_under_random_answers(shares):
+    low = {f"{c}/{s}": round(v, 3) for c, specs in shares["spec"].items() for s, v in specs.items() if v < MIN_SPEC_SHARE}
+    assert low == {}, low
+
+
+def test_every_class_is_recommended_a_fair_share_of_the_time(shares):
+    out = {c: round(v, 3) for c, v in shares["class"].items() if not CLASS_BAND[0] <= v <= CLASS_BAND[1]}
+    assert out == {}, out
+
+
+def test_no_specialization_dominates_its_class(shares):
+    assert max(v for specs in shares["spec"].values() for v in specs.values()) < 0.55
+
+
+# ------------------------------------------------------------------ the tuning overlay is documented and sensible
+
+
+def test_every_direct_spec_weight_names_a_class_the_answer_already_favours():
+    cfg = build_default_config()
+    for (qid, aid), weights in seed_tuning.SPEC_WEIGHTS.items():
+        answer = next(a for a in cfg.get_question(qid).answers if a.id == aid)
+        assert answer.spec_weights == weights
+        for key, w in weights.items():
+            assert key.split("/")[0] in answer.class_weights, (qid, aid, key)
+            assert 0 < w <= 3, (qid, aid, key, w)
+
+
+def test_every_specialization_has_direct_weights_somewhere():
+    cfg = build_default_config()
+    keys = {k for weights in seed_tuning.SPEC_WEIGHTS.values() for k in weights}
+    assert keys == {f"{c.id}/{s.id}" for c in cfg.classes for s in c.specializations}
+
+
+def test_type_changes_keep_the_original_four_answers_and_only_reword_the_question():
+    cfg = build_default_config()
+    original = {qid: (text, answers) for qid, text, answers in QUESTIONS}
+    for qid, (qtype, text) in seed_tuning.TYPE_CHANGES.items():
+        q = cfg.get_question(qid)
+        assert q.type == qtype == "pick_two" and q.text == text and q.text != original[qid][0]
+        assert [a.text for a in q.answers] == [a[1] for a in original[qid][1]]       # the answers themselves are untouched
+
+
+def test_class_pair_changes_only_touch_original_answers_and_keep_a_primary_and_secondary():
+    for (qid, aid), pair in seed_tuning.ORIGINAL_CLASS_PAIRS.items():
+        assert qid <= "q16" and len(set(pair)) == 2
+
+
+def test_changes_to_the_original_questions_are_small():
+    """The overlay is a rebalancing, not a rewrite: only a handful of original answers move classes."""
+    assert len(seed_tuning.ORIGINAL_CLASS_PAIRS) <= 10 and len(seed_tuning.TYPE_CHANGES) <= 6
+
+
+def test_trait_weights_of_the_original_questions_are_untouched():
+    cfg = build_default_config()
+    for qid, _text, answers in QUESTIONS:
+        for aid, _t, _cl, (t1, t2) in answers:
+            a = next(x for x in cfg.get_question(qid).answers if x.id == aid)
+            assert a.trait_weights == {t1: 2.0, t2: 1.0}
+
+
+# ------------------------------------------------------------------ the developer simulator agrees with the engine
+
+
+def test_the_fast_balance_simulator_matches_the_scoring_engine():
+    pytest.importorskip("numpy")
+    import importlib.util
+    import pathlib
+    spec = importlib.util.spec_from_file_location("balance", pathlib.Path(__file__).resolve().parent.parent / "tools" / "balance.py")
+    balance = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(balance)
+    assert balance.parity(build_default_config(), k=120) == 0
+    rep = balance.Sim(build_default_config(), n=20000, seed=3).report()
+    assert min(v for specs in rep["spec"].values() for v in specs.values()) >= MIN_SPEC_SHARE
