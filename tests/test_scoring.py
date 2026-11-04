@@ -131,8 +131,8 @@ def answers_for(cfg):
 def test_seed_has_thirty_questions_and_the_original_sixteen_keep_their_four_answers(config):
     from app.seed_tuning import TYPE_CHANGES
     core = [q for q in config.questions if q.min_length != "adaptive"]
-    assert len(core) == 30 and config.quiz.expected_question_count == 30 and len(config.questions) == 50
-    assert sorted(q.id for q in config.questions) == [f"q{i:02d}" for i in range(1, 51)]
+    assert len(core) == 30 and config.quiz.expected_question_count == 30 and len(config.questions) == 74
+    assert sorted(q.id for q in config.questions) == [f"q{i:02d}" for i in range(1, 75)]
     assert sorted(q.id for q in core) == [f"q{i:02d}" for i in range(1, 31)]
     for q in [x for x in config.questions if x.id <= "q16"]:
         assert [a.id for a in q.answers] == ["a", "b", "c", "d"], q.id

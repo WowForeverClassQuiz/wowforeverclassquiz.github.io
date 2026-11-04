@@ -75,6 +75,7 @@ def edited_config() -> Config:
         for s in cl.specializations:
             s.trait_multipliers = {k: round(v * 1.1, 3) for k, v in s.trait_multipliers.items()}
     cfg.scoring.spec_weight_multiplier = 2.5
+    cfg.scoring.adaptive.class_credit, cfg.scoring.adaptive.role_credit = 0.3, 0.7          # exercise credits other than the defaults
     cfg.scoring.confidence_margins.strong = 2.5
     cfg.scoring.confidence_margins.moderate = 0.75
     cfg.scoring.class_tie_break_order = list(reversed(cfg.scoring.class_tie_break_order))

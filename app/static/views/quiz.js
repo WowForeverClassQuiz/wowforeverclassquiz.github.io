@@ -34,6 +34,7 @@ const currentLength = () => lengths().find((l) => l.id === state.length) || leng
 /** Confidence mode (the default): the Oracle chooses each next question and stops once it is sure. */
 const isAdaptive = () => !!currentLength()?.adaptive;
 state.asked ||= [];          // confidence mode: the ids of the questions asked so far, in the order they were asked
+state.meter ||= {};          // confidence mode: question id -> how sure the Oracle was when that question was put (what the meter shows)
 const byId = (id) => state.quiz.questions.find((q) => q.id === id);
 /** The questions of the chosen length, in quiz order (confidence mode: the ones asked so far, in the order asked). */
 const questions = () => {
@@ -54,12 +55,12 @@ const answersKey = () => JSON.stringify(Object.entries(askedAnswers()).sort());
 const firstUnanswered = () => Math.max(0, questions().findIndex((q) => !state.answers[q.id]));
 
 // ---------------------------------------------------------------------------- intro
+/** The line under the length picker. The picker already gives each reading's size and rule, so this repeats them only when there is no picker. */
 function introCount() {
+  if (lengths().length > 1) return "";
   const len = currentLength();
   return len && len.adaptive
-    ? (len.min_questions > 1
-      ? `At least ${len.min_questions} questions, then the Oracle stops as soon as it is ${Math.round(len.confidence * 100)}% sure (${len.max_questions} at most).`
-      : `The Oracle stops as soon as it is ${Math.round(len.confidence * 100)}% sure (${len.max_questions} questions at most).`)
+    ? `The Oracle asks up to ${len.max_questions} questions and stops once it is ${Math.round(len.confidence * 100)}% sure.`
     : `${total()} questions.`;
 }
 
@@ -71,7 +72,7 @@ function drawIntro() {
       h("h1", {}, state.quiz.title),
       h("p", { class: "sub" }, state.quiz.subtitle || "A short reading of your temperament."),
       lengthPicker(),
-      h("p", { class: "sub" }, `${introCount()} There are no right answers; choose whatever draws you first.`),
+      h("p", { class: "sub" }, [introCount(), "There are no right answers; choose whatever draws you first."].filter(Boolean).join(" ")),
       h("button", { class: "btn primary large", type: "button", id: "begin", onclick: begin }, resuming ? "Continue your reading" : "Begin"),
       h("p", { style: { marginTop: "14px" } }, h("a", { class: "btn ghost", href: "#/specs", id: "browse-classes" }, "Browse the classes and specializations")),
       credit(),
@@ -109,7 +110,7 @@ function lengthPicker() {
     ls.map((l) => h("label", { class: "length" },
       h("input", { type: "radio", name: "quiz-length", value: l.id, checked: chosen.id === l.id, onchange: () => { state.length = l.id; draw(); document.querySelector(`input[name="quiz-length"][value="${l.id}"]`)?.focus(); } }),
       h("span", { class: "length-name" }, l.name),
-      h("span", { class: "length-meta" }, l.adaptive ? (l.min_questions > 1 ? `${l.min_questions}–${l.max_questions} questions · about ${l.minutes}–${l.minutes_max} min` : `Up to ${l.max_questions} questions · stops as soon as it is sure`) : `${l.question_count} questions · about ${l.minutes} min`),
+      h("span", { class: "length-meta" }, l.adaptive ? (l.min_questions > 1 ? `${l.min_questions}–${l.max_questions} questions · about ${l.minutes}–${l.minutes_max} min` : `Up to ${l.max_questions} questions`) : `${l.question_count} questions · about ${l.minutes} min`),
       h("span", { class: "length-blurb" }, l.description))));
 }
 
@@ -190,7 +191,7 @@ async function beginAdaptive() {
     state.status = await post("/adaptive/next", { answers: askedAnswers() });
     state.statusFor = answersKey();
     const next = state.status.next_question_id;
-    if (next && !state.asked.includes(next)) state.asked.push(next);
+    if (next && !state.asked.includes(next)) { state.asked.push(next); state.meter[next] = state.status; }
   } catch (err) {
     state.started = false; toast(err.message || "Could not reach the Oracle.", "bad");
   }
@@ -198,15 +199,18 @@ async function beginAdaptive() {
   draw();
 }
 
-function certainty(i, s, fresh) {
+/** The meter shows how sure the Oracle was when this question was put to you. It moves when you go on to the next question, never when you choose an answer. */
+function certainty(i, s) {
   const pct = s ? Math.round(s.confidence * 100) : 0;
   return h("div", { class: "certainty" },
     h("div", { class: "progress-label" }, h("span", {}, `Question ${i + 1}`),
-      h("span", { id: "certainty-label" }, s ? `The Oracle is ${pct}% sure${fresh ? "" : " …"}` : "Thinking…")),
+      h("span", { id: "certainty-label" }, s ? `The Oracle is ${pct}% sure` : "Thinking…")),
     h("div", { class: "progress certainty-bar", role: "progressbar", "aria-valuemin": 0, "aria-valuemax": 100, "aria-valuenow": pct, "aria-label": "How sure the Oracle is" },
       h("i", { style: { width: `${pct}%` } }), s ? h("b", { class: "tick", style: { left: `${s.threshold * 100}%` }, title: `It stops at ${Math.round(s.threshold * 100)}%` }) : null),
+    s && s.answered > 0 ? h("p", { class: "muted certainty-detail", id: "certainty-detail", title: "How likely the Oracle's model thinks each is right, given your answers so far" },
+      `${s.recommended.class_name} ${Math.round(s.class_probability * 100)}% · ${s.recommended.specialization_name} ${Math.round(s.spec_probability * 100)}% · ${roleLabel(s.role)} ${Math.round(s.role_probability * 100)}%`) : null,
     s ? h("p", { class: "muted certainty-note" },
-      `It asks the questions that tell it the most and stops once it is ${Math.round(s.threshold * 100)}% sure${s.min_questions > 1 ? `, after at least ${s.min_questions} questions` : ""} (${s.max_questions} at most).`) : null);
+      `It asks the questions that tell it the most and stops once it is ${Math.round(s.threshold * 100)}% sure${s.min_questions > 1 ? `, after at least ${s.min_questions} questions` : ""} (${s.max_questions} at most). A specialization of the same class, or with a similar role, counts partly toward that.`) : null);
 }
 
 function drawAdaptiveQuestion() {
@@ -231,12 +235,12 @@ function drawAdaptiveQuestion() {
     next = h("button", { class: "btn primary large", type: "button", id: "reveal", disabled: !chosen, onclick: reveal }, "Reveal my reading");
   } else {
     next = h("button", { class: "btn primary", type: "button", id: "next", disabled: !chosen || (lastAsked && !fresh), onclick: () => {
-      if (lastAsked && s && s.next_question_id && !state.asked.includes(s.next_question_id)) state.asked.push(s.next_question_id);
+      if (lastAsked && s && s.next_question_id && !state.asked.includes(s.next_question_id)) { state.asked.push(s.next_question_id); state.meter[s.next_question_id] = s; }
       state.index = i + 1; draw();
     } }, lastAsked && chosen && !fresh ? "Thinking…" : "Next");
   }
   put(
-    certainty(i, s, fresh),
+    certainty(i, state.meter[q.id] || s),
     dots,
     h("p", { class: "eyebrow-q" }, EYEBROWS[q.type] || EYEBROWS.choice),
     h("h2", { class: "question", id: groupId }, q.text),
@@ -246,7 +250,7 @@ function drawAdaptiveQuestion() {
       next),
     lastAsked && fresh && s && s.can_reveal && !s.done && chosen
       ? h("p", { style: { textAlign: "right", marginTop: "10px" } }, h("button", { class: "linkish", type: "button", id: "reveal-now", onclick: reveal },
-        `Reveal now (${Math.round(s.confidence * 100)}% sure)`))
+        "Reveal now"))
       : null,
     h("p", { class: "muted", style: { fontSize: "0.82rem", marginTop: "18px" } }, TIPS[q.type] || TIPS.choice),
   );
@@ -427,7 +431,7 @@ async function reveal() {
 // ---------------------------------------------------------------------------- result
 function restart() {
   state.answers = {}; state.picks = {}; state.index = 0; state.started = false; state.result = null; state.length = null;
-  state.asked = []; state.status = null; state.statusFor = null; state.statusFailed = null;
+  state.asked = []; state.meter = {}; state.status = null; state.statusFor = null; state.statusFailed = null;
   draw();
   window.scrollTo(0, 0);
 }
@@ -476,6 +480,7 @@ function resultText(r) {
     "",
     `Recommended: ${p.primary_specialization.name} ${p.primary_class.name} (${roleLabel(p.primary_specialization.role)})`,
     `Reading strength: ${p.confidence.label} (a heuristic based on the class gap), from ${r.metadata.total_questions} questions`,
+    p.confidence.overall != null ? `Model confidence: ${Math.round(p.confidence.overall * 100)}% sure (${p.primary_class.name} ${Math.round(p.confidence.class_probability * 100)}%, ${p.primary_specialization.name} ${Math.round(p.confidence.probability * 100)}%, ${roleLabel(p.confidence.role)} ${Math.round(p.confidence.role_probability * 100)}%)` : "",
     p.build ? `Build: ${p.build.name} [${p.build.status}]${p.build.tree_distribution_text ? ` ${p.build.tree_distribution_text}` : ""}` : "",
     `Also in the stars: ${a.alternative_specialization.name} ${a.alternative_class.name}; closest in ${p.primary_class.name}: ${a.second_specialization_in_primary_class.name}`,
     "",
@@ -506,12 +511,16 @@ function drawResult() {
       h("div", { class: "chips" },
         h("span", { class: "chip" }, h("b", {}, roleLabel(p.primary_specialization.role))),
         h("span", { class: "chip", title: p.confidence.note }, h("b", {}, p.confidence.label), h("i", {}, "heuristic")),
-        p.confidence.probability != null
-          ? h("span", { class: "chip", title: "The probability the Oracle's model gives this specialization, given your answers. The model is an assumption about how people answer; see the maths PDF." },
-            h("b", {}, `${Math.round(p.confidence.probability * 100)}% sure`), h("i", {}, "model"))
+        p.confidence.overall != null
+          ? h("span", { class: "chip", title: "How sure the Oracle's model is: the probability it gives this specialization, plus partial credit for the rest of the class and for specializations with a similar role. The model is an assumption about how people answer; see the maths PDF." },
+            h("b", {}, `${Math.round(p.confidence.overall * 100)}% sure`), h("i", {}, "model"))
           : null,
         p.dominant_traits.map((t) => h("span", { class: "chip" }, h("b", {}, t.name))),
         lengthChip(r)),
+      p.confidence.overall != null
+        ? h("p", { class: "muted", id: "confidence-detail", style: { fontSize: "0.88rem", margin: "10px 0 0" } },
+          `The model gives ${p.primary_class.name} ${Math.round(p.confidence.class_probability * 100)}%, ${p.primary_specialization.name} ${Math.round(p.confidence.probability * 100)}% and ${roleLabel(p.confidence.role)} ${Math.round(p.confidence.role_probability * 100)}%.`)
+        : null,
     ),
     h("div", { class: "card prose" }, h("h3", {}, "Your temperament"), h("p", {}, p.personality_interpretation)),
     overviewCard({ className: p.primary_class.name, classOverview: p.class_overview, specName: p.primary_specialization.name, specOverview: p.specialization_overview, url: p.overview_url }),

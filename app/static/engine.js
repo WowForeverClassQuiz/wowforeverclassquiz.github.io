@@ -285,6 +285,8 @@ export function evaluate(c, answers, { allowPartial = false, length = "long" } =
   const personality = `The stars lean toward the ${pCls.name}: ${pCls.description.replace(/\.+$/, "")}. `
     + `Your answers emphasized ${join(dominant.map((t) => t.name))}. ${readings}`;
   const pSpec = pCls.specs.find((s) => s.id === primaryPick.id);
+  const model = adaptiveModel(c);
+  const confidenceParts = model.confidenceParts(model.posterior(picks), pSpec.gidx, c.adaptive.class_credit, c.adaptive.role_credit);
   const weighed = pSpec.terms.map(([t, m]) => `${c.traits[t].name} (×${formatG(m)})`).join(", then ");
   const scored = pSpec.terms.map(([t]) => signed(traitTotals[t])).join(", ");
   const specReading = `${pSpec.description} The ${pCls.name} ${pSpec.name} profile weighs ${weighed}; `
@@ -308,7 +310,11 @@ export function evaluate(c, answers, { allowPartial = false, length = "long" } =
     specialization_interpretation: specReading.trim(),
     confidence: {
       label,
-      probability: o(adaptiveModel(c).posterior(picks)[pSpec.gidx]),
+      probability: o(confidenceParts.spec),
+      class_probability: o(confidenceParts.class),
+      role_probability: o(confidenceParts.role),
+      overall: o(confidenceParts.overall),
+      role: pSpec.role,
       class_gap: o(gap),
       strong_margin: strongMargin,
       moderate_margin: moderateMargin,
@@ -359,8 +365,9 @@ export function adaptiveModel(c) {
   const s = c.adaptive;
   const nTypes = c.classes.reduce((n, cl) => n + cl.specs.length, 0);
   const typeClass = new Array(nTypes).fill(0);
+  const typeRoles = new Array(nTypes).fill(null);                // a role like "melee_damage_or_tank" is two roles
   const terms = new Array(nTypes).fill([]);
-  c.classes.forEach((cl, ci) => cl.specs.forEach((sp) => { typeClass[sp.gidx] = ci; terms[sp.gidx] = sp.terms; }));
+  c.classes.forEach((cl, ci) => cl.specs.forEach((sp) => { typeClass[sp.gidx] = ci; typeRoles[sp.gidx] = sp.role.split("_or_"); terms[sp.gidx] = sp.terms; }));
   const logp = c.questions.map((q) => {
     const rows = q.class_delta.map((_, r) => {
       const u = [];
@@ -377,6 +384,18 @@ export function adaptiveModel(c) {
     }
     return rows;
   });
+  /** The confidence in specialization `rec` and what it is made of, as adaptive.Model.confidence_parts: credit 1 for rec, class_credit for the rest of its class, role_credit for similar roles. */
+  const confidenceParts = (post, rec, classCredit, roleCredit) => {
+    const sameClass = post.map((p, g) => typeClass[g] === typeClass[rec]);
+    const sameRole = post.map((p, g) => typeRoles[g].some((r) => typeRoles[rec].includes(r)));
+    const credit = post.map((p, g) => (g === rec ? 1 : Math.max(sameClass[g] ? classCredit : 0, sameRole[g] ? roleCredit : 0)));
+    return {
+      overall: fsum(post.map((p, g) => p * credit[g])),
+      spec: post[rec],
+      class: fsum(post.filter((p, g) => sameClass[g])),
+      role: fsum(post.filter((p, g) => sameRole[g])),
+    };
+  };
   const entropy = (p) => -fsum(p.filter((x) => x > 0).map((x) => x * Math.log(x)));
   const posterior = (picks) => {
     const lp = Array.from({ length: nTypes }, (_, g) => fsum(picks.map(([qi, ri]) => logp[qi][ri][g])));
@@ -403,7 +422,7 @@ export function adaptiveModel(c) {
     }
     return [best, bestGain];
   };
-  c.__model = { nTypes, typeClass, logp, entropy, posterior, expectedGain, bestQuestion };
+  c.__model = { nTypes, typeClass, typeRoles, logp, entropy, confidenceParts, posterior, expectedGain, bestQuestion };
   return c.__model;
 }
 
@@ -440,7 +459,8 @@ export function adaptiveStatus(c, answers) {
   const answered = new Set(picks.map(([qi]) => qi));
   const remaining = c.questions.map((q, i) => i).filter((i) => !answered.has(i));
   const limit = Math.min(s.max_questions, c.questions.length);
-  const confidence = post[rec];
+  const parts = model.confidenceParts(post, rec, s.class_credit, s.role_credit);
+  const confidence = parts.overall;
   let done, reason = null;
   if (n >= s.min_questions && confidence >= s.confidence) { done = true; reason = "confident"; }
   else if (n >= limit || !remaining.length) { done = true; reason = "limit"; }
@@ -448,7 +468,8 @@ export function adaptiveStatus(c, answers) {
   const [nxt, gain] = done ? [null, null] : model.bestQuestion(post, remaining);
   const out = {
     answered: n, min_questions: s.min_questions, max_questions: limit, threshold: s.confidence, confidence,
-    recommended: typeProbability(c, rec, confidence), top: ranked.slice(0, 5).map((g) => typeProbability(c, g, post[g])),
+    spec_probability: parts.spec, class_probability: parts.class, role_probability: parts.role, role: c.classes.flatMap((cl) => cl.specs).find((sp) => sp.gidx === rec).role,
+    recommended: typeProbability(c, rec, parts.spec), top: ranked.slice(0, 5).map((g) => typeProbability(c, g, post[g])),
     entropy: model.entropy(post), done, can_reveal: n >= s.min_questions,
   };
   if (reason) out.reason = reason;

@@ -49,6 +49,13 @@ def respond(model, c, qi, tau, rng):
     return c.questions[qi].answer_ids[rng.choices(range(len(probs)), probs)[0]]
 
 
+def earned(model, s, rec, tau):
+    """What a reading of ``rec`` is worth for a person of type ``tau``: 1 if exact, else the credit for the same class or a similar role."""
+    if rec == tau:
+        return 1.0
+    return max(s.class_credit if model.type_class[tau] == model.type_class[rec] else 0.0, s.role_credit if model.type_roles[tau] & model.type_roles[rec] else 0.0)
+
+
 def run_respondent(model, c, tau, rng, adaptive_order=True, settings=None):
     s = settings or c.adaptive
     answers, remaining = {}, list(range(len(c.questions)))
@@ -57,8 +64,9 @@ def run_respondent(model, c, tau, rng, adaptive_order=True, settings=None):
         post = model.posterior(picks)
         rec = adaptive.recommended_type(c, picks) if picks else 0
         n = len(answers)
-        if n >= s.max_questions or not remaining or (n >= s.min_questions and post[rec] >= s.confidence):
-            return n, post[rec], rec == tau
+        stated = model.confidence_parts(post, rec, s.class_credit, s.role_credit).overall
+        if n >= s.max_questions or not remaining or (n >= s.min_questions and stated >= s.confidence):
+            return n, stated, earned(model, s, rec, tau)
         qi = model.best_question(post, remaining)[0] if adaptive_order else remaining[0]
         remaining.remove(qi)
         answers[c.questions[qi].id] = respond(model, c, qi, tau, rng)
@@ -140,7 +148,7 @@ def test_the_adaptive_order_needs_fewer_questions_than_the_quiz_order():
 def test_the_status_before_any_answer_asks_the_most_informative_question(c):
     st = adaptive.status(c, {})
     assert st.answered == 0 and not st.done and st.next_question_id and not st.can_reveal
-    assert math.isclose(st.confidence, 1 / 27) and st.threshold == 0.9 and (st.min_questions, st.max_questions) == (1, 30)
+    assert math.isclose(st.spec_probability, 1 / 27) and 1 / 27 <= st.confidence < 0.5 and st.threshold == 0.9 and (st.min_questions, st.max_questions) == (1, 30)
 
 
 def test_a_clear_respondent_is_told_to_stop_as_soon_as_the_oracle_is_sure(c, feral):
@@ -185,7 +193,7 @@ def test_the_limit_and_the_minimum_come_from_the_settings(cfg, feral):
 
 
 def test_synthetic_respondents_are_recovered_about_as_often_as_the_confidence_says():
-    """Within the model the posterior is exact: when the Oracle stops, it is right about as often as it says."""
+    """Within the model the posterior is exact: when the Oracle stops, the reading earns about as much credit as it says."""
     cfg = build_default_config()
     c = compile_config(cfg)
     model = adaptive.Model(c)
@@ -211,7 +219,8 @@ def test_a_confidence_mode_result_scores_exactly_the_questions_answered(cfg, c, 
     m = ev.metadata
     assert m.quiz_length == "adaptive" and m.total_questions == m.answered_questions == len(answers) and m.complete and not m.missing_questions
     assert (ev.result.primary_class.id, ev.result.primary_specialization.id) == ("druid", "feral_combat")
-    assert ev.result.confidence.probability == pytest.approx(st.confidence, abs=1e-9)
+    assert ev.result.confidence.overall == pytest.approx(st.confidence, abs=1e-9)
+    assert ev.result.confidence.probability == pytest.approx(st.spec_probability, abs=1e-9)
     assert ev.result.confidence.strong_margin == pytest.approx(3.0 * math.sqrt(len(answers) / 30))
 
 
@@ -257,7 +266,17 @@ def test_confidence_mode_is_the_default_and_the_first_option(client):
     quiz = client.get(f"{API}/quiz").json()
     assert quiz["default_length"] == "adaptive" and [l["id"] for l in quiz["lengths"]] == ["adaptive", "short", "medium", "long"]
     ad = quiz["lengths"][0]
-    assert ad["adaptive"] is True and (ad["min_questions"], ad["max_questions"], ad["confidence"]) == (1, 30, 0.9) and len(ad["question_ids"]) == 50
+    assert ad["adaptive"] is True and (ad["min_questions"], ad["max_questions"], ad["confidence"]) == (1, 30, 0.9) and len(ad["question_ids"]) == 74
+
+
+def test_the_confidence_option_describes_itself_once(cfg):
+    """The front page shows the card's size line and description side by side; between them the limit and the rule appear once each."""
+    from app.public import public_lengths
+    ad = next(l for l in public_lengths(cfg) if l.id == "adaptive")
+    assert ad.description == "The Oracle picks each question to learn the most and stops once it is 90% sure of your specialization."
+    strict = cfg.model_copy(deep=True)
+    strict.scoring.adaptive.min_questions = 5
+    assert next(l for l in public_lengths(strict) if l.id == "adaptive").description.endswith("sure of your specialization, after at least 5 questions.")
 
 
 def test_an_administrator_can_change_or_switch_off_confidence_mode(client):

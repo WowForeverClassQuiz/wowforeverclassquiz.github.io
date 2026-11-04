@@ -38,6 +38,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from app import adaptive as adaptive_mod  # noqa: E402
 from app.models import ALLOCATION_POINTS, LENGTHS, Config  # noqa: E402
+from app.seed_classes import CLASS_ORDER  # noqa: E402
 from app.scoring import active_questions, compile_config, response_coefficients  # noqa: E402
 from app.seed import build_default_config  # noqa: E402
 from app.version import APP_VERSION, build_info  # noqa: E402
@@ -165,6 +166,19 @@ class Simulator:
         self.td = [np.asarray(q.trait_delta) for q in c.questions]
         self.sd = [np.asarray(q.spec_delta) for q in c.questions]
         self.tie = np.asarray(c.tie_rank)
+        roles = [set(sp.role.split("_or_")) for cl in c.classes for sp in cl.specs]
+        self.tcl = np.array([ci for ci, cl in enumerate(c.classes) for _ in cl.specs])
+        self.same_class = self.tcl[:, None] == self.tcl[None, :]
+        self.same_role = np.array([[bool(a & b) for b in roles] for a in roles])
+        self.onehot = np.zeros((self.nt, c.n_classes))
+        self.onehot[np.arange(self.nt), self.tcl] = 1.0
+
+    def credit(self, rec):
+        """What every type is worth toward the confidence in ``rec``: 1 for rec, the class or role credit for its class-mates and role-mates."""
+        s = self.c.adaptive
+        k = np.maximum(np.where(self.same_role[rec], s.role_credit, 0.0), np.where(self.same_class[rec], s.class_credit, 0.0))
+        k[rec] = 1.0
+        return k
 
     def recommend(self, ct, tt, st) -> int:
         c = self.c
@@ -250,17 +264,20 @@ class Simulator:
             post = w / w.sum()
             rec = self.recommend(ct, tt, st)
             lead = rec
-            confs.append(float(post[rec]))
+            overall = float(post @ self.credit(rec))
+            confs.append(overall)
             ents.append(float(-(post[post > 0] * np.log(post[post > 0])).sum()))
-            if stopped_at is None and (len(asked) >= mx or (len(asked) >= mn and post[rec] >= conf)):
+            if stopped_at is None and (len(asked) >= mx or (len(asked) >= mn and overall >= conf)):
                 stopped_at = len(asked)
-                final = (rec, float(post[rec]), int(post.argmax()))
+                final = (rec, overall, int(post.argmax()))
                 if not full:
                     break
         if stopped_at is None:
             stopped_at = len(asked)
-            final = (rec, float(post[rec]), int(post.argmax()))
-        return {"n": stopped_at, "conf": final[1], "right": (tau is not None and final[0] == tau), "mode": final[2], "confs": confs, "ents": ents}
+            final = (rec, overall, int(post.argmax()))
+        earned = float(self.credit(final[0])[tau]) if tau is not None else 0.0
+        return {"n": stopped_at, "conf": final[1], "right": (tau is not None and final[0] == tau), "earned": earned,
+                "class_right": bool(tau is not None and self.tcl[final[0]] == self.tcl[tau]), "mode": final[2], "confs": confs, "ents": ents}
 
 
 def cohort(sim: Simulator, n: int, seed: int, **kw):
@@ -270,6 +287,7 @@ def cohort(sim: Simulator, n: int, seed: int, **kw):
     return {
         "runs": runs, "mean_n": float(ns.mean()), "median_n": float(np.median(ns)), "p90_n": float(np.percentile(ns, 90)),
         "mean_conf": float(np.mean([r["conf"] for r in runs])), "accuracy": float(np.mean([r["right"] for r in runs])),
+        "earned": float(np.mean([r["earned"] for r in runs])), "class_accuracy": float(np.mean([r["class_right"] for r in runs])),
         "capped": float(np.mean(ns >= sim.c.adaptive.max_questions)),
     }
 
@@ -495,9 +513,32 @@ def build(cfg: Config, out: Path, quick: bool = False) -> dict:
               eq(r"\ln\pi(\tau\,|\,r_{1:n})=\lambda_c\,S_c+\lambda_s\,P_s-\sum_{i=1}^{n}\ln Z_{q_i}(\tau)+\mathrm{const.}\qquad Z_q(\tau)=\sum_{r}e^{\,u_q(r|\tau)}")]
     story += [P("The first two terms are the quiz's own class and specialization scores: <b>the scoring is the evidence, and the model turns it into probabilities</b>. "
                 "The normalizers ln Z<sub>q</sub>(τ) correct for how strongly each type prefers particular responses to a question. A test verifies this identity numerically. "
-                f"Before any answer the uncertainty is the entropy H = ln 27 = {math.log(27):.3f} nats; the confidence is the posterior probability of the specialization the "
-                "scoring currently recommends (class first, then specialization), even when the posterior's own maximum lies elsewhere, so the recommendation shown and the confidence stated always refer to the same specialization. "
+                f"Before any answer the uncertainty is the entropy H = ln 27 = {math.log(27):.3f} nats. The confidence is measured for the specialization the scoring currently "
+                "recommends (class first, then specialization), even when the posterior's own maximum lies elsewhere, so the recommendation shown and the confidence stated always refer to the same specialization. "
                 "One visible consequence: when a new answer changes which specialization leads, the certainty meter can fall before it rises again.")]
+    story += [P("The confidence is not only the probability of that one specialization. A person torn between the three specializations of one class, or between Protection Paladin and "
+                "Protection Warrior, has given the Oracle real information: it knows the class, or the role, even if it cannot yet name the specialization. So every type earns <b>credit</b> "
+                f"toward the confidence in the recommendation ŝ: 1 for ŝ itself, c = {ad.class_credit:g} for another specialization of its class, r = {ad.role_credit:g} for one that shares a role with it "
+                "(tank, healer, melee damage or ranged damage; Feral Combat counts as both a tank and melee damage), and the larger of the two when both apply. The confidence is the posterior's expected credit:"),
+              eq(r"C=\sum_{\tau}\pi(\tau\,|\,r_{1:n})\,K(\hat\tau,\tau)\qquad K(\hat\tau,\tau)=\max\left(1_{\tau=\hat\tau},\ c\,1_{\mathrm{same\ class}},\ r\,1_{\mathrm{shared\ role}}\right)")]
+    _mdl = adaptive_mod.Model(c)
+    _g = lambda cid, sid: next(sp.gidx for cl in c.classes if cl.id == cid for sp in cl.specs if sp.id == sid)
+    _examples = [
+        ("A clear specialization", {("mage", "fire"): 0.92, ("mage", "frost"): 0.04, ("mage", "arcane"): 0.04}, ("mage", "fire")),
+        ("Two tanks, two classes", {("paladin", "protection"): 0.4, ("warrior", "protection"): 0.4, ("priest", "holy"): 0.2}, ("paladin", "protection")),
+        ("One class, three specializations", {("mage", "frost"): 0.4, ("mage", "arcane"): 0.3, ("mage", "fire"): 0.25, ("rogue", "combat"): 0.05}, ("mage", "frost")),
+        ("Three classes, three roles", {("paladin", "holy"): 0.34, ("warlock", "destruction"): 0.33, ("rogue", "combat"): 0.33}, ("paladin", "holy")),
+    ]
+    _rows = [["Posterior", "Recommended", "Its probability", "Its class", "Its role", "Confidence C"]]
+    for _label, _post, _rec in _examples:
+        _vec = [0.0] * 27
+        for (_cid, _sid), _w in _post.items():
+            _vec[_g(_cid, _sid)] = _w
+        _p = _mdl.confidence_parts(_vec, _g(*_rec), ad.class_credit, ad.role_credit)
+        _rows.append([_label, f"{_rec[0].capitalize()} {_rec[1].replace('_', ' ').title()}", pct(_p.spec), pct(_p.class_), pct(_p.role), pct(_p.overall)])
+    story += [table(_rows, widths=[1.9 * inch, 1.5 * inch, 0.9 * inch, 0.8 * inch, 0.8 * inch, WIDTH - 5.9 * inch], align_right_from=2),
+              P(f"<b>Table 9.</b> The confidence for four example posteriors, with c = {ad.class_credit:g} and r = {ad.role_credit:g}. The probabilities of the specialization, its class and its role are always shown beside the "
+                "confidence; with c = r = 0 the confidence is just the first of them.", SMALL)]
     story += [P("8.3&nbsp;&nbsp;Choosing the next question", H2),
               P("For each unanswered question the Oracle computes the <b>expected information gain</b>: how much, on average, the answer would reduce the uncertainty about the type. "
                 "It asks the question with the largest gain (ties go to the earlier question; gains are compared after rounding to nine decimals).")]
@@ -508,17 +549,19 @@ def build(cfg: Config, out: Path, quick: bool = False) -> dict:
     for k, (g, qid, ty) in enumerate(gains0[:8], start=1):
         rows.append([str(k), qid.upper(), ty.replace("_", " "), f"{g:.3f}", pct(g / math.log(27), 1)])
     story += [table(rows, widths=[0.5 * inch, 0.9 * inch, 1.1 * inch, 1.6 * inch, 1.6 * inch]),
-              P("<b>Table 9.</b> The eight most informative first questions (before any answer). The Oracle always opens with the first one; what it asks next depends on your answers.", SMALL)]
+              P("<b>Table 10.</b> The eight most informative first questions (before any answer). The Oracle always opens with the first one; what it asks next depends on your answers.", SMALL)]
     story += [P("8.4&nbsp;&nbsp;When to stop", H2)]
     story += [eq(r"\mathrm{stop\ when}\quad n\geq n_{\min}\ \ \mathrm{and}\ \ \pi\left(\hat\tau\,|\,r_{1:n}\right)\geq \theta\quad\mathrm{or}\quad n\geq n_{\max},\qquad \hat\tau=\mathrm{recommended\ specialization}")]
     story += [table([["Setting", "Symbol", "Value", "Meaning"],
                      ["Minimum questions", "n<sub>min</sub>", "none" if ad.min_questions <= 1 else str(ad.min_questions), "never reveal earlier (1 means no minimum)"],
                      ["Maximum questions", "n<sub>max</sub>", str(ad.max_questions), "reveal anyway (a “Close call” is possible)"],
-                     ["Confidence threshold", "θ", pct(ad.confidence, 0), "probability the model must give the recommendation"],
+                     ["Confidence threshold", "θ", pct(ad.confidence, 0), "confidence C the recommendation must reach"],
                      ["Class sharpness", "λ<sub>c</sub>", f"{ad.sharpness_class:g}", "how strongly class weights steer an answer"],
-                     ["Specialization sharpness", "λ<sub>s</sub>", f"{ad.sharpness_spec:g}", "how strongly a profile steers an answer"]],
+                     ["Specialization sharpness", "λ<sub>s</sub>", f"{ad.sharpness_spec:g}", "how strongly a profile steers an answer"],
+                     ["Credit for the same class", "c", f"{ad.class_credit:g}", "weight of another specialization of the recommended class in the confidence"],
+                     ["Credit for a similar role", "r", f"{ad.role_credit:g}", "weight of a specialization sharing a role with the recommended one"]],
                     widths=[1.7 * inch, 0.8 * inch, 0.8 * inch, WIDTH - 3.3 * inch], align_right_from=-1),
-              P("<b>Table 10.</b> Confidence-mode settings (admin: Profiles & Settings).", SMALL)]
+              P("<b>Table 11.</b> Confidence-mode settings (admin: Profiles & Settings).", SMALL)]
 
     # ---- simulations
     rows = [["Question order", "Mean questions", "Median", "90th percentile", "Reached the limit", "Mean stop confidence", "Right type at stop"]]
@@ -528,20 +571,20 @@ def build(cfg: Config, out: Path, quick: bool = False) -> dict:
               P(f"To see how the procedure behaves, {n_sim} simulated people were generated for each row: a type is drawn uniformly, then they answer every question the Oracle asks "
                 "as the model says that type would. The numbers follow exactly from the assumptions and measure no real people."),
               table(rows, widths=[1.9 * inch, 0.8 * inch, 0.6 * inch, 0.8 * inch, 0.8 * inch, 0.9 * inch, WIDTH - 5.8 * inch]),
-              P("<b>Table 11.</b> Adaptive question choice versus asking in quiz order, under the model. Choosing questions by information gain saves several questions.", SMALL)]
+              P("<b>Table 12.</b> Adaptive question choice versus asking in quiz order, under the model. Choosing questions by information gain saves several questions.", SMALL)]
     # calibration
     confs = np.array([r["conf"] for r in base["runs"]])
-    right = np.array([r["right"] for r in base["runs"]])
+    right = np.array([r["earned"] for r in base["runs"]])
     bins = [(0.0, 0.8), (0.8, 0.9), (0.9, 0.95), (0.95, 0.99), (0.99, 1.01)]
-    rows = [["Stop confidence", "Runs", "Mean stated confidence", "Actually right"]]
+    rows = [["Stop confidence", "Runs", "Mean stated confidence", "Credit earned"]]
     for lo, hi in bins:
         m = (confs >= lo) & (confs < hi)
         if m.sum():
             rows.append([f"{lo:.2f} to {min(hi, 1):.2f}", str(int(m.sum())), pct(confs[m].mean()), pct(right[m].mean())])
-    story += [P("Because the posterior is exact within the model, the stated confidence should match how often the recommendation is right among simulated people who stop with that "
-                "confidence. It does, up to sampling noise:"),
+    story += [P("Because the posterior is exact within the model, the stated confidence should match the credit the recommendation earns among simulated people who stop with that "
+                "confidence (1 when the specialization is exactly right, c or r when only the class or the role is). It does, up to sampling noise:"),
               table(rows, widths=[1.6 * inch, 0.8 * inch, 1.8 * inch, 1.5 * inch]),
-              P("<b>Table 12.</b> Calibration inside the model. This checks the arithmetic. It cannot show that real people answer the way the model does.", SMALL)]
+              P("<b>Table 13.</b> Calibration inside the model. This checks the arithmetic. It cannot show that real people answer the way the model does.", SMALL)]
 
     def draw_hist(ax):
         bins_ = np.arange(0.5, 31.5, 1)
@@ -585,7 +628,7 @@ def build(cfg: Config, out: Path, quick: bool = False) -> dict:
         c_f = 1 / 27 if n == 0 else cf["fixed"][n - 1]
         rows.append([str(n), f"{h_a:.3f}", f"{h_f:.3f}", pct(c_a), pct(c_f)])
     story += [table(rows, widths=[1.2 * inch, 1.8 * inch, 1.5 * inch, 1.2 * inch, WIDTH - 5.7 * inch]),
-              P("<b>Table 13.</b> Average uncertainty and confidence by number of questions, for simulated respondents.", SMALL)]
+              P("<b>Table 14.</b> Average uncertainty and confidence by number of questions, for simulated respondents.", SMALL)]
 
     # sensitivity
     print("simulating sensitivity ...", flush=True)
@@ -598,13 +641,13 @@ def build(cfg: Config, out: Path, quick: bool = False) -> dict:
                 "and reaches its threshold more easily; a smaller value assumes noisier answers and asks for more. If real people are noisier than the default assumes, the true "
                 "accuracy at a stated 90% is lower than 90%."),
               table(rows, widths=[2.1 * inch, 0.9 * inch, 0.6 * inch, 1.0 * inch, 1.1 * inch, WIDTH - 5.7 * inch]),
-              P("<b>Table 14.</b> Effect of the specialization sharpness (λ<sub>c</sub> held at its default), simulated respondents.", SMALL)]
+              P("<b>Table 15.</b> Effect of the specialization sharpness (λ<sub>c</sub> held at its default), simulated respondents.", SMALL)]
     rows = [["Confidence threshold θ", "Mean questions", "Median", "Reached the limit", "Mean stop confidence", "Right type at stop"]]
     for th in (0.8, 0.9, 0.95, 0.99):
         r = cohort(sim, n_sim, 303, stop=(ad.min_questions, ad.max_questions, th))
         rows.append([pct(th, 0) + (" (default)" if abs(th - ad.confidence) < 1e-9 else ""), f"{r['mean_n']:.1f}", f"{r['median_n']:.0f}", pct(r["capped"], 0), pct(r["mean_conf"]), pct(r["accuracy"])])
     story += [table(rows, widths=[2.1 * inch, 0.9 * inch, 0.6 * inch, 1.0 * inch, 1.1 * inch, WIDTH - 5.7 * inch]),
-              P("<b>Table 15.</b> The trade between certainty and length: higher thresholds ask more questions and are right more often.", SMALL)]
+              P("<b>Table 16.</b> The trade between certainty and length: higher thresholds ask more questions and are right more often.", SMALL)]
     rnd = cohort(sim, n_sim, 404, order="adaptive", answer="random")
     story += [P(f"<b>People who answer at random.</b> With no consistent type there is nothing to find: under uniformly random answers the mean stop is {rnd['mean_n']:.1f} questions, "
                 f"{pct(rnd['capped'], 0)} of such respondents run to the limit of {ad.max_questions}, and the final reading has a typical confidence of {pct(rnd['mean_conf'], 0)}. "
@@ -615,7 +658,7 @@ def build(cfg: Config, out: Path, quick: bool = False) -> dict:
     core_cfg = cfg.model_copy(deep=True)
     core_cfg.questions = [q for q in core_cfg.questions if q.min_length != "adaptive"]
     sim_core = Simulator(core_cfg)
-    rows = [["Respondents are", "Questions asked", "Mean questions", "Reached the limit", "Mean stated confidence", "Actually right"]]
+    rows = [["Respondents are", "Questions asked", "Mean questions", "Reached the limit", "Mean stated confidence", "Credit earned", "Exact specialization right"]]
     res = {}
     for k in (1.0, 0.7, 0.5):
         truth_full = Simulator(cfg, sharp_spec=ad.sharpness_spec * k, sharp_class=ad.sharpness_class * k).p
@@ -623,16 +666,16 @@ def build(cfg: Config, out: Path, quick: bool = False) -> dict:
         for label, s_, tr in ((f"all {sim.nq} questions", sim, truth_full), (f"the {sim_core.nq} fixed-quiz questions", sim_core, truth_core)):
             r = cohort(s_, n_sim, 505, truth=tr)
             res[(k, s_.nq)] = r
-            rows.append([f"{pct(k, 0)} as consistent as assumed", label, f"{r['mean_n']:.1f}", pct(r["capped"], 0), pct(r["mean_conf"]), pct(r["accuracy"])])
+            rows.append([f"{pct(k, 0)} as consistent as assumed", label, f"{r['mean_n']:.1f}", pct(r["capped"], 0), pct(r["mean_conf"]), pct(r["earned"]), pct(r["accuracy"])])
     story += [P("8.7&nbsp;&nbsp;If people are less consistent than the model assumes", H2),
               P("The stated confidence is exact only when people answer the way the model says. To see how far it can mislead, respondents were simulated who are only 70% or 50% as "
                 "consistent as the Oracle assumes (their sharpness is scaled down; the Oracle's own model is unchanged). The stated confidence then overstates how often the "
                 "recommendation is right, by an amount that grows as respondents get noisier. "
-                f"At 70% consistency the pool of {sim.nq} questions is right {pct(res[(0.7, sim.nq)]['accuracy'], 0)} of the time against {pct(res[(0.7, sim_core.nq)]['accuracy'], 0)} for the {sim_core.nq} fixed-quiz questions, "
-                f"but it also stops sooner, so its stated confidence overshoots by {100 * (res[(0.7, sim.nq)]['mean_conf'] - res[(0.7, sim.nq)]['accuracy']):.0f} points against {100 * (res[(0.7, sim_core.nq)]['mean_conf'] - res[(0.7, sim_core.nq)]['accuracy']):.0f}. "
-                "Raising the confidence threshold in the admin settings narrows the gap at the cost of more questions (Table 15)."),
-              table(rows, widths=[1.7 * inch, 1.7 * inch, 0.8 * inch, 0.8 * inch, 0.95 * inch, WIDTH - 5.95 * inch]),
-              P("<b>Table 16.</b> Stated confidence against actual accuracy when respondents are less consistent than assumed.", SMALL)]
+                f"At 70% consistency the pool of {sim.nq} questions earns {pct(res[(0.7, sim.nq)]['earned'], 0)} credit against {pct(res[(0.7, sim_core.nq)]['earned'], 0)} for the {sim_core.nq} fixed-quiz questions, "
+                f"but it also stops sooner, so its stated confidence overshoots by {100 * (res[(0.7, sim.nq)]['mean_conf'] - res[(0.7, sim.nq)]['earned']):.0f} points against {100 * (res[(0.7, sim_core.nq)]['mean_conf'] - res[(0.7, sim_core.nq)]['earned']):.0f}. "
+                "Raising the confidence threshold in the admin settings narrows the gap at the cost of more questions (Table 16)."),
+              table(rows, widths=[1.5 * inch, 1.5 * inch, 0.7 * inch, 0.7 * inch, 0.8 * inch, 0.7 * inch, WIDTH - 5.9 * inch]),
+              P("<b>Table 17.</b> Stated confidence against actual accuracy when respondents are less consistent than assumed.", SMALL)]
 
     # ---- other ways of choosing the next question
     print("simulating other question-choice rules ...", flush=True)
@@ -656,7 +699,7 @@ def build(cfg: Config, out: Path, quick: bool = False) -> dict:
                 "nearly all of the remaining uncertainty is about the leader and its closest rivals, so the most informative question is the one that separates them. Early on, "
                 "when nothing leads yet, a rule that aims at the leader has nothing to aim at."),
               table(rows, widths=[3.2 * inch, 0.8 * inch, 0.6 * inch, 0.8 * inch, 0.8 * inch, WIDTH - 6.2 * inch]),
-              P("<b>Table 17.</b> Ways of choosing the next question, under the model.", SMALL)]
+              P("<b>Table 18.</b> Ways of choosing the next question, under the model.", SMALL)]
 
     # ---- the pool
     core_idx = [i for i, q in enumerate(c.questions) if q.length_rank < len(LENGTHS)]
@@ -677,15 +720,37 @@ def build(cfg: Config, out: Path, quick: bool = False) -> dict:
         rows = [["Pair of specializations in one class", f"Evidence from the {len(core_idx)} fixed-quiz questions", f"Evidence from all {sim.nq} questions"]]
         rows += [[f"{type_name[a]} and {type_name[b]}", f"{e0:.1f}", f"{e1:.1f}"] for e0, e1, a, b in within[:8]]
         mean_q = lambda idx: float(np.mean([pair_evidence([q]).sum() / (sim.nt * (sim.nt - 1)) for q in idx]))
-        story += [P("8.9&nbsp;&nbsp;Why the pool has fifty questions", H2),
+        n_class = sum(1 for q in c.questions if q.id in CLASS_ORDER)
+        n_spec = len(extra_idx) - n_class
+        story += [P(f"8.9&nbsp;&nbsp;Why the pool has {sim.nq} questions", H2),
                   P(f"The {len(core_idx)} questions of the fixed quizzes separate classes well and separate the specializations of one class poorly. Measured as the total evidence a pool can give about "
                     "a pair of types (the sum over questions of the symmetric Kullback-Leibler divergence between how the two types answer, in nats), the weakest pairs are all within one class, "
                     f"and the median within-class pair has {np.median([w[0] for w in within]):.0f} nats of evidence against {np.median([ev_core[a, b] for a in range(sim.nt) for b in range(a + 1, sim.nt) if type_class[a] != type_class[b]]):.0f} across classes. "
-                    f"The {len(extra_idx)} confidence-mode-only questions (two for each class, a role question and a distance question) are aimed at that gap, and raise the median within-class pair to "
-                    f"{np.median([w[1] for w in within]):.0f} nats. They are not stronger than the others: a question in the fixed quizzes carries {mean_q(core_idx):.2f} nats per pair on average, "
-                    f"and one of the added questions {mean_q(extra_idx):.2f}, so the gain comes from covering the weak pairs. No weight was made heavier to get there."),
+                    f"{n_spec} of the confidence-mode-only questions (two for each class, a role question and a distance question) are aimed at that gap and raise the median within-class pair to "
+                    f"{np.median([w[1] for w in within]):.0f} nats. A question in the fixed quizzes carries {mean_q(core_idx):.2f} nats per pair on average and one of the added ones {mean_q([i for i in extra_idx if c.questions[i].id not in CLASS_ORDER]):.2f}, "
+                    "so the gain comes from covering the weak pairs. No weight was made heavier to get there."),
                   table(rows, widths=[3.2 * inch, 1.6 * inch, WIDTH - 4.8 * inch], align_right_from=-1),
-                  P("<b>Table 18.</b> The eight within-class pairs the fixed-quiz questions separate least, before and after the added questions.", SMALL)]
+                  P("<b>Table 19.</b> The eight within-class pairs the fixed-quiz questions separate least, before and after the added questions.", SMALL)]
+        if n_class:
+            # class-level evidence: a class answers like an even mix of its specializations
+            def class_pairs(q):
+                Pc = (sim.p[q] @ sim.onehot) / 3.0
+                L = np.log(Pc)
+                k = np.einsum("rc,rcd->cd", Pc, L[:, :, None] - L[:, None, :])
+                return k + k.T
+            ev_cls = np.array([class_pairs(q) for q in range(sim.nq)])
+            trios = [(a, b, d) for a in range(9) for b in range(a + 1, 9) for d in range(b + 1, 9)]
+            strong = np.array([[min(ev_cls[q][a, b], ev_cls[q][a, d], ev_cls[q][b, d]) for (a, b, d) in trios] for q in range(sim.nq)]) >= 1.0
+            first_fifty = [i for i, q in enumerate(c.questions) if q.id not in CLASS_ORDER and int(q.id[1:]) <= 50]
+            rows = [["Questions counted", "Fewest for a trio", "Median", "Most"]]
+            for label, idx in ((f"the {len(core_idx)} fixed-quiz questions", core_idx), (f"the first {len(first_fifty)} questions", first_fifty), (f"all {sim.nq} questions", list(range(sim.nq)))):
+                n_sep = strong[idx].sum(axis=0)
+                rows.append([label, str(int(n_sep.min())), f"{np.median(n_sep):.0f}", str(int(n_sep.max()))])
+            story += [P(f"The other {n_class} confidence-mode-only questions are personality questions in which every answer belongs to a different class, so that a person torn among their three leading "
+                        "classes is asked to choose among exactly those three, many times over. The table counts, for each of the 84 trios of classes, the questions that tell all three apart by at least one nat. "
+                        f"They carry {np.mean([ev_cls[i].sum() / 72 for i in range(sim.nq) if c.questions[i].id in CLASS_ORDER]):.2f} nats per class pair against {np.mean([ev_cls[i].sum() / 72 for i in core_idx]):.2f} for the fixed-quiz questions: a little more, because each answer names a class no other answer does."),
+                      table(rows, widths=[2.6 * inch, 1.3 * inch, 1.0 * inch, WIDTH - 4.9 * inch], align_right_from=-1),
+                      P("<b>Table 20.</b> Questions that separate every class of a trio, by trio.", SMALL)]
 
     # ================================================================ 9 worked example
     print("worked example ...", flush=True)
@@ -712,7 +777,7 @@ def build(cfg: Config, out: Path, quick: bool = False) -> dict:
               P("A fixed example respondent taking the quiz in confidence mode: a person of type Druid Feral Combat who always gives the response the model finds most likely for that type. "
                 "At each step the table shows which question the Oracle chose, the response, how much information it expected from it, and where the posterior stood after the answer."),
               table(rows, widths=[0.3 * inch, 0.7 * inch, 0.8 * inch, 0.85 * inch, 0.85 * inch, 1.65 * inch, 0.85 * inch, WIDTH - 6.0 * inch], align_right_from=-1, font=7.2),
-              P(f"<b>Table 19.</b> The example run stops after {fin.answered} questions with {pct(fin.confidence)} confidence in {fin.recommended.class_name} {fin.recommended.specialization_name}. "
+              P(f"<b>Table 21.</b> The example run stops after {fin.answered} questions with {pct(fin.confidence)} confidence in {fin.recommended.class_name} {fin.recommended.specialization_name}. "
                 "The five most probable types at the end:", SMALL)]
     rows = [["Type", "Probability"]] + [[f"{t.class_name} {t.specialization_name}", pct(t.probability, 2)] for t in fin.top]
     story += [table(rows, widths=[2.6 * inch, 1.2 * inch])]
@@ -728,7 +793,8 @@ def build(cfg: Config, out: Path, quick: bool = False) -> dict:
                 "Research on WoW players has found little or no link between personality and the class they choose."),
               P("• <b>Balance is a property of the rules.</b> “Every class equally likely” holds when every response is equally likely. Real answers are not uniform, so real results will not be evenly spread, and nothing here claims they should be."),
               P("• <b>The confidence is exact inside a model, and the model is an assumption.</b> It says: people of a type answer by a logit choice with sharpness λ, independently, from a uniform start. Real answers are correlated and noisier or "
-                "sharper than any one λ. Read “90% sure” as “the answers are as consistent with one specialization as this model requires”; no study of real respondents backs the figure."),
+                "sharper than any one λ. A person who is a real blend of several classes is treated as noise around one of them, so the confidence overstates what can be known about them. The confidence is also an expected credit, not the probability "
+                "of the exact specialization, which is always shown beside it. Read “90% sure” as “the answers are as consistent with one specialization as this model requires”; no study of real respondents backs the figure."),
               P("• <b>Talent builds are drafts.</b> The builds shown with a result come from hand-assembled talent data dated November 2, 2026 and are unverified; they play no part in the selection."),
               P("• <b>Reproducibility.</b> Everything above is deterministic given the configuration; the simulations use fixed seeds. The browser and Python engines are tested to give identical results.")]
 

@@ -14,14 +14,17 @@ prior::
 
 Its logarithm is lambda_c * S_c + lambda_s * P_s - (a normalizer per question and type): the scoring's own class and
 specialization scores, corrected for how peaked each type's preferences are. The confidence in a result is the posterior
-probability of the specialization the scoring recommends. The next question is the unanswered one with the largest expected
-information gain (expected drop of the posterior's entropy). Everything is a pure function of the configuration and the answers.
+probability of the specialization the scoring recommends, plus partial credit for the probability on other specializations of its
+class and on others with a similar role (tank, healer, melee damage, ranged damage), so a person torn between the three specializations
+of one class, or between Protection Paladin and Protection Warrior, is not told the Oracle is unsure of everything. The next question is
+the unanswered one with the largest expected information gain (expected drop of the posterior's entropy). Everything is a pure
+function of the configuration and the answers.
 The "probabilities" are exact within the model; how well the model describes real people is an assumption (see the PDF).
 """
 from __future__ import annotations
 
 from math import exp, fsum, log
-from typing import Optional
+from typing import NamedTuple, Optional
 
 from .models import AdaptiveSettings, AdaptiveStatus, TypeProbability
 from .scoring import (
@@ -36,6 +39,15 @@ from .scoring import (
 LN_TYPES_PRECISION = 9      # gains are compared after rounding to this many decimals, so float noise never decides a question
 
 
+class ConfidenceParts(NamedTuple):
+    """The confidence in a recommendation and what it is made of (all probabilities from the same posterior)."""
+
+    overall: float      # spec + class_credit * (the rest of the class) + role_credit * (similar-role specializations outside the class)
+    spec: float         # the recommended specialization
+    class_: float       # all of its class
+    role: float         # every specialization with a role like its role (any class)
+
+
 class Model:
     """Log-likelihood tables of the choice model for one compiled configuration."""
 
@@ -44,10 +56,12 @@ class Model:
         s = c.adaptive
         self.n_types = c.n_specs
         self.type_class = [0] * self.n_types
+        self.type_roles: list[frozenset] = [frozenset()] * self.n_types      # a role like "melee_damage_or_tank" is two roles
         terms: list = [()] * self.n_types
         for ci, cls in enumerate(c.classes):
             for sp in cls.specs:
                 self.type_class[sp.gidx] = ci
+                self.type_roles[sp.gidx] = frozenset(sp.role.split("_or_"))
                 terms[sp.gidx] = sp.terms
         self.logp: list[list[list[float]]] = []           # [question][response][type] = log P(response | type, question)
         for q in c.questions:
@@ -71,6 +85,26 @@ class Model:
         w = [exp(x - top) for x in lp]
         total = fsum(w)
         return [x / total for x in w]
+
+    def confidence_parts(self, post, rec: int, class_credit: float, role_credit: float) -> ConfidenceParts:
+        """How sure the model is of ``rec``: its own probability, its class's, its role's, and the combined confidence.
+
+        Every type earns credit toward the confidence: 1 for ``rec`` itself, ``class_credit`` for another specialization of its class,
+        ``role_credit`` for one that shares a role with it, and the larger of the two when both apply. The confidence is the posterior's
+        expected credit, so with both credits at 0 it is just the probability of ``rec``.
+        """
+        same_class = [self.type_class[g] == self.type_class[rec] for g in range(self.n_types)]
+        same_role = [bool(self.type_roles[g] & self.type_roles[rec]) for g in range(self.n_types)]
+        credit = [
+            1.0 if g == rec else max(class_credit if same_class[g] else 0.0, role_credit if same_role[g] else 0.0)
+            for g in range(self.n_types)
+        ]
+        return ConfidenceParts(
+            overall=fsum(post[g] * credit[g] for g in range(self.n_types)),
+            spec=post[rec],
+            class_=fsum(post[g] for g in range(self.n_types) if same_class[g]),
+            role=fsum(post[g] for g in range(self.n_types) if same_role[g]),
+        )
 
     @staticmethod
     def entropy(p) -> float:
@@ -110,6 +144,14 @@ def _type_probability(c: Compiled, g: int, p: float) -> TypeProbability:
     raise KeyError(g)
 
 
+def _role_of(c: Compiled, g: int) -> str:
+    for cls in c.classes:
+        for sp in cls.specs:
+            if sp.gidx == g:
+                return sp.role
+    raise KeyError(g)
+
+
 def model_probability(c: Compiled, picks, model: Optional[Model] = None) -> float:
     """Probability the model gives the recommended specialization given these answers."""
     model = model or Model(c)
@@ -128,7 +170,8 @@ def status(c: Compiled, answers: dict[str, str], settings: Optional[AdaptiveSett
     answered_q = {qi for qi, _ in picks}
     remaining = [qi for qi in range(len(c.questions)) if qi not in answered_q]
     limit = min(s.max_questions, len(c.questions))
-    confidence = post[rec]
+    parts = model.confidence_parts(post, rec, s.class_credit, s.role_credit)
+    confidence = parts.overall
     if n >= s.min_questions and confidence >= s.confidence:
         done, reason = True, "confident"
     elif n >= limit or not remaining:
@@ -138,7 +181,8 @@ def status(c: Compiled, answers: dict[str, str], settings: Optional[AdaptiveSett
     nxt, gain = (None, None) if done else model.best_question(post, remaining)
     return AdaptiveStatus(
         answered=n, min_questions=s.min_questions, max_questions=limit, threshold=s.confidence, confidence=confidence,
-        recommended=_type_probability(c, rec, confidence),
+        spec_probability=parts.spec, class_probability=parts.class_, role_probability=parts.role, role=_role_of(c, rec),
+        recommended=_type_probability(c, rec, parts.spec),
         top=[_type_probability(c, g, post[g]) for g in order[:5]],
         entropy=model.entropy(post), done=done, reason=reason, can_reveal=n >= s.min_questions,
         next_question_id=c.questions[nxt].id if nxt is not None else None, expected_gain=gain,

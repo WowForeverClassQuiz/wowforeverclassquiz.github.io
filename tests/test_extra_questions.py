@@ -12,6 +12,7 @@ from app.seed import build_default_config
 from app.validation import validate_config
 
 from .conftest import DRUID_ANSWERS
+from app.seed_classes import CLASS_ORDER
 
 EXTRA_IDS = [f"q{n}" for n in range(31, 51)]
 
@@ -32,12 +33,12 @@ def model(c):
 
 
 def test_the_added_questions_are_asked_only_in_confidence_mode(cfg):
-    assert [q.id for q in cfg.questions if q.min_length == "adaptive"] == EXTRA_IDS
+    assert [q.id for q in cfg.questions if q.min_length == "adaptive"] == EXTRA_IDS + CLASS_ORDER
     lengths = {l.id: l for l in public_lengths(cfg)}
     for length in LENGTHS:
         assert not set(EXTRA_IDS) & set(lengths[length].question_ids), length
         assert lengths[length].question_count in (10, 20, 30)
-    assert set(EXTRA_IDS) <= set(lengths["adaptive"].question_ids) and len(lengths["adaptive"].question_ids) == 50
+    assert set(EXTRA_IDS) <= set(lengths["adaptive"].question_ids) and len(lengths["adaptive"].question_ids) == 74
     with pytest.raises(UnknownQuestionError):                     # a fixed quiz refuses an answer to one of them
         evaluate(cfg, dict(DRUID_ANSWERS, q31="a"))
     ev = evaluate(cfg, dict(DRUID_ANSWERS, q31="a"), length="adaptive")      # confidence mode takes them

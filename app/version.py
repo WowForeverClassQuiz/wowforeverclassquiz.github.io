@@ -9,7 +9,7 @@ from typing import Mapping, Optional
 
 #: Version of the application as a whole (questions, scoring, pages). See CHANGELOG.md. The scoring rules have their own
 #: ``algorithm_version`` (app/seed.py).
-APP_VERSION = "1.7.1"
+APP_VERSION = "1.8.0"
 DEVELOPER = "Anibru"
 DEVELOPER_URL = "https://github.com/Anibru"
 

@@ -29,7 +29,7 @@ function savedForm(key) {
   const ad = cfg.scoring.adaptive;
   return {
     strong: cfg.scoring.confidence_margins.strong, moderate: cfg.scoring.confidence_margins.moderate, order: [...cfg.scoring.class_tie_break_order],
-    adaptive: { enabled: ad.enabled, min: ad.min_questions, max: ad.max_questions, confidence: Math.round(ad.confidence * 10000) / 100, lc: ad.sharpness_class, ls: ad.sharpness_spec },
+    adaptive: { enabled: ad.enabled, min: ad.min_questions, max: ad.max_questions, confidence: Math.round(ad.confidence * 10000) / 100, lc: ad.sharpness_class, ls: ad.sharpness_spec, cc: ad.class_credit, rc: ad.role_credit },
   };
 }
 const specForm = (s) => ({ description: s.description, overview: s.overview || "", rows: Object.entries(s.trait_multipliers).map(([t, m]) => [t, m]) });
@@ -125,12 +125,13 @@ function scoringCard() {
   card.append(h("h3", {}, "Scoring settings"),
     h("div", { class: "stack", style: { marginBottom: "16px" } },
       h("h4", {}, "Confidence mode (the default way to take the quiz)"),
-      h("p", { class: "muted", style: { fontSize: "0.88rem" } }, "The Oracle asks the most informative question each time and stops once the model's probability for one specialization reaches the threshold, or at the maximum. A minimum of 1 means it may stop after any answer. The sharpness values say how consistently people are assumed to answer as their type: higher means fewer questions. See docs/oracle-math.pdf."),
+      h("p", { class: "muted", style: { fontSize: "0.88rem" } }, "The Oracle asks the most informative question each time and stops once its confidence reaches the threshold, or at the maximum. The confidence is the model's probability for the recommended specialization plus partial credit for probability on other specializations of the same class and with a similar role; set both credits to 0 for the specialization's probability alone. A minimum of 1 means it may stop after any answer. The sharpness values say how consistently people are assumed to answer as their type: higher means fewer questions. See docs/oracle-math.pdf."),
       h("label", { class: "row" }, enabled, "Offer confidence mode"),
       h("div", { class: "row", style: { flexWrap: "wrap" } },
         num("Minimum questions (1 means none)", "min", { min: "1", step: "1" }), num("Maximum questions", "max", { min: "1", step: "1" }),
         num("Stop at confidence (%)", "confidence", { min: "1", max: "99", step: "1" }),
-        num("Class sharpness", "lc", { min: "0.05", step: "0.05" }), num("Specialization sharpness", "ls", { min: "0.05", step: "0.05" }))),
+        num("Class sharpness", "lc", { min: "0.05", step: "0.05" }), num("Specialization sharpness", "ls", { min: "0.05", step: "0.05" }),
+        num("Credit for the same class (0 to 1)", "cc", { min: "0", max: "1", step: "0.05" }), num("Credit for a similar role (0 to 1)", "rc", { min: "0", max: "1", step: "0.05" }))),
     h("div", { class: "grid two" },
       h("div", { class: "stack" }, h("h4", {}, "Confidence descriptor margins"),
         h("p", { class: "muted", style: { fontSize: "0.88rem" } }, "Heuristic wording based on the gap between the top two class scores. Not a statistical estimate."),
@@ -138,7 +139,7 @@ function scoringCard() {
       h("div", {}, h("h4", {}, "Class tie-break order"), h("p", { class: "muted", style: { fontSize: "0.88rem" } }, "Equal class scores resolve in this order (top wins)."), list)),
     actions(key, card, () => save(key, () => patch("/scoring", { expected_revision: cfg.revision, confidence_margins: { strong: d.strong, moderate: d.moderate }, class_tie_break_order: d.order,
       adaptive: { enabled: d.adaptive.enabled, min_questions: d.adaptive.min, max_questions: d.adaptive.max, confidence: d.adaptive.confidence / 100,
-        sharpness_class: d.adaptive.lc, sharpness_spec: d.adaptive.ls } }), "Scoring settings saved")));
+        sharpness_class: d.adaptive.lc, sharpness_spec: d.adaptive.ls, class_credit: d.adaptive.cc, role_credit: d.adaptive.rc } }), "Scoring settings saved")));
   return card;
 }
 

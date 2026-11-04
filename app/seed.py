@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from .drafts import apply_drafts
 from .spec_guides import GUIDE_NOTE, GUIDES
+from .seed_classes import build_class_questions
 from .seed_extra import build_extra_questions
 from .seed_tuning import CLASS_WEIGHTS, MIN_LENGTH, ORIGINAL_CLASS_PAIRS, SPEC_WEIGHTS, TYPE_CHANGES
 from .models import (
@@ -33,7 +34,7 @@ from .models import (
     Trait,
 )
 
-ALGORITHM_VERSION = "1.5.0"
+ALGORITHM_VERSION = "1.6.0"
 
 # Multipliers for the primary, secondary and tertiary trait of the original three-trait profiles.
 SPEC_MULTIPLIERS = (1.5, 1.0, 0.45)
@@ -557,8 +558,8 @@ def build_default_config(include_drafts: bool = True) -> Config:
             a.spec_weights = _spec_weights(SPEC_WEIGHTS.get((q.id, a.id), {}).items())
     for q in by_id.values():
         q.min_length = MIN_LENGTH.get(q.id, "long")
-    # q31 to q50 are asked only in confidence mode; they carry their own weights and sit after the thirty fixed-quiz questions
-    questions = [by_id[qid] for qid in QUESTION_ORDER] + build_extra_questions()
+    # q31 to q74 are asked only in confidence mode; they carry their own weights and sit after the thirty fixed-quiz questions
+    questions = [by_id[qid] for qid in QUESTION_ORDER] + build_extra_questions() + build_class_questions()
     builds = [
         Build(
             id=f"{cls.id}-{spec.id}-leveling".replace("_", "-"),

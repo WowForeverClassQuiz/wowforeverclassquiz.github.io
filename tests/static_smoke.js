@@ -13,8 +13,8 @@
   // The same fixed answer set as tests/conftest.py: a Feral Combat Druid on the seed configuration.
   const ANSWERS = { q01: "a", q02: "c", q03: "0-0-6-0", q04: "a", q05: "c", q06: "d", q07: "b>c>a>d", q08: "d", q09: "3-0-0-3", q10: "a", q11: "a>c>b>d", q12: "b", q13: "d", q14: "c",
     q15: "3-3-0-0", q16: "c", q17: "6", q18: "1", q19: "10", q20: "10", q21: "5", q22: "10", q23: "1", q24: "5", q25: "b+c", q26: "a>b>c>d", q27: "b+d", q28: "b", q29: "b", q30: "b" };
-  // Confidence mode may ask any of the fifty questions, so this respondent answers each the way the model finds most likely for a Feral Combat Druid.
-  const MODAL = {"q01": "a", "q02": "c", "q17": "1", "q03": "0-0-6-0", "q04": "a", "q25": "a+b", "q05": "c", "q18": "1", "q06": "d", "q07": "b>c>a>d", "q19": "10", "q08": "c", "q28": "b", "q09": "6-0-0-0", "q20": "10", "q10": "a", "q26": "a>b>c>d", "q11": "b>c>a>d", "q21": "10", "q12": "b", "q29": "a", "q13": "a", "q22": "10", "q14": "a", "q27": "a+d", "q15": "6-0-0-0", "q23": "1", "q16": "c", "q24": "1", "q30": "a", "q31": "b", "q32": "b>a>c>d", "q33": "b", "q34": "b>a>c>d", "q35": "a", "q36": "6-0-0-0", "q37": "a", "q38": "d>a>b>c", "q39": "b", "q40": "0-6-0-0", "q41": "b", "q42": "d>b>a>c", "q43": "c", "q44": "d>b>a>c", "q45": "a", "q46": "0-0-0-6", "q47": "b", "q48": "b>a>c>d", "q49": "a", "q50": "1"};
+  // Confidence mode may ask any of the seventy-four questions, so this respondent answers each the way the model finds most likely for a Feral Combat Druid.
+  const MODAL = {"q01": "a", "q02": "c", "q17": "1", "q03": "0-0-6-0", "q04": "a", "q25": "a+b", "q05": "c", "q18": "1", "q06": "d", "q07": "b>c>a>d", "q19": "10", "q08": "c", "q28": "b", "q09": "6-0-0-0", "q20": "10", "q10": "a", "q26": "a>b>c>d", "q11": "b>c>a>d", "q21": "10", "q12": "b", "q29": "a", "q13": "a", "q22": "10", "q14": "a", "q27": "a+d", "q15": "6-0-0-0", "q23": "1", "q16": "c", "q24": "1", "q30": "a", "q31": "b", "q32": "b>a>c>d", "q33": "b", "q34": "b>a>c>d", "q35": "a", "q36": "6-0-0-0", "q37": "a", "q38": "d>a>b>c", "q39": "b", "q40": "0-6-0-0", "q41": "b", "q42": "d>b>a>c", "q43": "c", "q44": "d>b>a>c", "q45": "a", "q46": "0-0-0-6", "q47": "b", "q48": "b>a>c>d", "q49": "a", "q50": "1", "q51": "b", "q52": "a", "q53": "a", "q54": "b", "q55": "d", "q56": "b", "q57": "c", "q58": "c", "q59": "d", "q60": "a", "q61": "d>c>a>b", "q62": "a>d>b>c", "q63": "d>a>b>c", "q64": "a>c>d>b", "q65": "d>c>a>b", "q66": "d>a>b>c", "q67": "d>a>b>c", "q68": "6-0-0-0", "q69": "0-0-0-6", "q70": "0-6-0-0", "q71": "0-0-0-6", "q72": "0-0-6-0", "q73": "0-0-0-6", "q74": "0-0-6-0"};
   const respond = async (type, value) => {
     if (type === "pick_two") {
       const want = value.split("+");
@@ -39,7 +39,7 @@
   check("the disclaimer footer is present", /Not affiliated with or endorsed by Blizzard/.test(document.querySelector(".sitefoot")?.textContent || ""));
   const data = await (await fetch(new URL("data/oracle.json", document.baseURI))).json();
   const quiz = data.quiz;
-  check("the data file holds 50 questions of five kinds", quiz.questions.length === 50 && new Set(quiz.questions.map((q) => q.type)).size === 5);
+  check("the data file holds 74 questions of five kinds", quiz.questions.length === 74 && new Set(quiz.questions.map((q) => q.type)).size === 5);
 
   // ---- answer every question through the real controls -------------------------------------------------------------
   location.hash = "#/"; await sleep(300);
@@ -74,35 +74,43 @@
   check("the intro offers confidence mode, short, medium and long, with confidence mode chosen first",
     [...document.querySelectorAll('input[name="quiz-length"]')].map((i) => i.value).join() === "adaptive,short,medium,long" && picked() === "adaptive", picked());
   check("each option says how many questions it has", ["10 questions", "20 questions", "30 questions"].every((t) => document.querySelector(".lengths").innerText.includes(t)));
-  check("the intro line explains the chosen mode", /The Oracle stops as soon as it is 90% sure \(30 questions at most\)/.test(document.getElementById("view").innerText));
+  check("the front page says the stopping rule and the limit once each", ((document.getElementById("view").innerText.match(/90%/g) || []).length === 1) && ((document.getElementById("view").innerText.match(/\bstops?\b/g) || []).length === 1) && ((document.getElementById("view").innerText.match(/\bUp to\b/g) || []).length === 1), document.getElementById("view").innerText.match(/90%|stops?|Up to/g));
   // ---- confidence mode (the default): the Oracle picks each question and stops once it is sure ------------------------------------
   const idByText = Object.fromEntries(quiz.questions.map((q) => [q.text, q.id]));
   const until = async (test, ms = 4000) => { for (let t = 0; t < ms && !test(); t += 50) await sleep(50); return test(); };
   check("confidence mode is offered first and says how it works", /Confidence/.test(document.querySelector(".lengths").innerText) && /Up to 30 questions/.test(document.querySelector(".lengths").innerText));
   document.getElementById("begin").click(); await sleep(500);
-  let asked = 0, sawLabel = "";
+  let asked = 0, sawLabel = "", sawDetail = "", moved = 0, movedOnChoice = 0;
+  const meter = () => document.querySelector(".certainty-bar")?.getAttribute("aria-valuenow");
   for (let guard = 0; guard < 40; guard++) {
     await until(() => document.querySelector(".question"));
     const q = byId[idByText[document.querySelector(".question").textContent]];
+    const before = meter();
     await respond(q.type, MODAL[q.id]);
     asked++;
     await until(() => document.getElementById("reveal") || (document.getElementById("next") && !document.getElementById("next").disabled));
     sawLabel = document.getElementById("certainty-label")?.textContent || sawLabel;
+    sawDetail = document.getElementById("certainty-detail")?.textContent || sawDetail;
+    if (meter() !== before) movedOnChoice++;
     if (document.getElementById("reveal")) break;
     document.getElementById("next").click(); await sleep(150);
+    if (meter() !== before) moved++;
   }
+  check("the meter never moves when an answer is chosen, only when the next question comes", movedOnChoice === 0 && moved > 0, `moved on choice ${movedOnChoice}, moved on next ${moved}`);
+  check("the meter also shows the class, specialization and role odds", /\d+% · .+ \d+% · .+ \d+%/.test(sawDetail), sawDetail);
   check("it showed how sure it was while asking", /The Oracle is \d+% sure/.test(sawLabel) && !!document.querySelector(".certainty-bar .tick"), sawLabel);
   check("it stopped as soon as it was sure, well before the limit of thirty", asked >= 1 && asked < 15, asked);
   document.getElementById("reveal").click(); await sleep(2200);
   page = document.getElementById("view").innerText;
   check("the result is a confidence reading on the questions it asked", /Confidence reading/.test(page) && new RegExp(`${asked} questions`).test(page), asked);
+  check("the result shows the class, specialization and role odds", /gives .+ \d+%, .+ \d+% and .+ \d+%/.test(document.getElementById("confidence-detail")?.textContent || ""), document.getElementById("confidence-detail")?.textContent);
   check("the result states the model's confidence", /\d+% sure/.test(page) && (Number(/(\d+)% sure/.exec(page)[1]) >= 90), /(\d+)% sure/.exec(page)?.[0]);
   check("the confidence reading found Feral Combat Druid, like the full quiz", document.querySelector(".result-hero h1")?.textContent === "Druid" && document.querySelector(".result-hero h2")?.textContent === "Feral Combat");
   check("a confidence reading offers no sharpening step", !document.getElementById("refine"));
   document.getElementById("restart").click(); await sleep(100);
 
   document.querySelector('input[name="quiz-length"][value="short"]').click(); await sleep(100);
-  check("choosing a fixed length changes the intro line", /10 questions\. There are no right answers/.test(document.getElementById("view").innerText));
+  check("choosing a fixed length selects it without repeating its size under the cards", document.querySelector('input[name="quiz-length"]:checked')?.value === "short" && (document.getElementById("view").innerText.match(/10 questions/g) || []).length === 1);
   document.getElementById("begin").click(); await sleep(100);
   check("the short quiz has ten questions", document.querySelectorAll(".dots button").length === 10 && /Question 1 of 10/.test(document.getElementById("view").innerText));
   await answerQuestions(lengthOf.short.question_ids);

@@ -1,7 +1,18 @@
 # Changelog
 
 The version shown on the first page is `APP_VERSION` in [app/version.py](app/version.py). The scoring rules carry their own
-`algorithm_version` (currently 1.5.0), which changes only when the arithmetic or the seed weights do.
+`algorithm_version` (currently 1.6.0), which changes only when the arithmetic or the seed weights do.
+
+## 1.8.0 · 2026-11-04
+
+* **The confidence counts more than one specialization.** The Oracle's confidence is the model's probability for the recommended specialization plus half credit for probability on other specializations of the same class and half credit for those with a similar role (tank, healer, melee damage, ranged damage). A person whose three Mage specializations are all gaining, or who sits between Protection Paladin and Protection Warrior, is now told the Oracle is fairly sure. The class, specialization and role probabilities are shown beside the figure, in the quiz and on the result, and an administrator can change both credits in Profiles & Settings (0 and 0 gives the old measure).
+* **Twenty-four class-separating personality questions (q51 to q74)**, asked only in confidence mode: ten choices, seven rankings and seven six-point splits in which every answer belongs to a different class, so a person torn among their three leading classes has to choose among them. Every trio of classes now has at least four questions that tell all three apart, up from two.
+* The confidence meter now moves when you go on to the next question, not when you choose an answer.
+* The scoring algorithm is 1.6.0, because confidence mode stops on the new measure. Scores for the same answers are unchanged.
+
+## 1.7.2 · 2026-11-04
+
+* The front page says each thing once. The Confidence card gives the limit ("Up to 30 questions") and the stopping rule with its 90% once, and the line under the cards no longer repeats them.
 
 ## 1.7.1 · 2026-11-04
 

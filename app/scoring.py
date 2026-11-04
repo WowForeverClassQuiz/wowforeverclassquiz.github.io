@@ -671,10 +671,15 @@ def evaluate(
     else:
         label = "Close call"
     from .adaptive import Model     # imported here: adaptive.py builds on this module
-    probability = Model(c).posterior(picks)[p_spec.gidx]
+    model = Model(c)
+    parts = model.confidence_parts(model.posterior(picks), p_spec.gidx, c.adaptive.class_credit, c.adaptive.role_credit)
     confidence = Confidence(
         label=label,
-        probability=_o(probability),
+        probability=_o(parts.spec),
+        class_probability=_o(parts.class_),
+        role_probability=_o(parts.role),
+        overall=_o(parts.overall),
+        role=p_spec.role,
         class_gap=_o(gap),
         strong_margin=strong_margin,
         moderate_margin=moderate_margin,

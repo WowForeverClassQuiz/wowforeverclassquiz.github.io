@@ -342,19 +342,29 @@ class ConfidenceMargins(Strict):
 
 
 class AdaptiveSettings(Strict):
-    """Confidence mode: ask the most informative questions until the Oracle is sure of one specialization.
+    """Confidence mode: ask the most informative questions until the Oracle is sure of its recommendation.
 
-    The model behind the confidence figure is a logit choice model of how a person of each class/specialization type would answer;
+    The model behind the confidence figure is a logit choice model of how a person of each class and specialization would answer;
     see docs/oracle-math.pdf. ``sharpness_*`` say how strongly an answer reveals the type (higher = people answer more consistently
-    with their type, so fewer questions are needed and the confidence is more easily reached).
+    with their type, so fewer questions are needed and the confidence is more easily reached). The confidence is the model's
+    probability of the recommended specialization plus partial credit for the probability it gives to other specializations of the
+    same class (``class_credit``) and to others with a similar role (``role_credit``).
     """
 
     enabled: bool = True
     min_questions: int = Field(default=1, ge=1, description="Never reveal before this many questions have been answered. 1 means no minimum.")
     max_questions: int = Field(default=30, ge=1, description="Reveal after this many questions even if the Oracle is not sure.")
-    confidence: float = Field(default=0.90, gt=0, lt=1, description="Stop once the recommended specialization has this probability.")
+    confidence: float = Field(default=0.90, gt=0, lt=1, description="Stop once the Oracle's confidence in its recommendation reaches this.")
     sharpness_class: float = Field(default=1.0, gt=0, le=10, description="How strongly a class's weights steer an answer (lambda_c).")
     sharpness_spec: float = Field(default=0.35, gt=0, le=10, description="How strongly a specialization's profile steers an answer (lambda_s).")
+    class_credit: float = Field(
+        default=0.5, ge=0, le=1,
+        description="How much probability on another specialization of the recommended class counts toward the confidence (0: only the exact specialization counts).",
+    )
+    role_credit: float = Field(
+        default=0.5, ge=0, le=1,
+        description="How much probability on a specialization with a similar role (tank, healer, melee damage, ranged damage) counts toward the confidence.",
+    )
 
 
 class ScoringSettings(Strict):
@@ -542,7 +552,14 @@ class AdaptiveStatus(BaseModel):
     min_questions: int
     max_questions: int
     threshold: float
-    confidence: float = Field(description="Probability the model gives the specialization the scoring currently recommends.")
+    confidence: float = Field(
+        description="The Oracle's confidence in the recommendation: the model's probability for the recommended specialization, plus partial credit "
+                    "(class_credit, role_credit) for probability on other specializations of its class or with a similar role."
+    )
+    spec_probability: float = Field(description="Probability the model gives the specialization the scoring currently recommends.")
+    class_probability: float = Field(description="Probability the model gives the recommended class (all of its specializations).")
+    role_probability: float = Field(description="Probability the model gives specializations with a role like the recommended one's (any class).")
+    role: str = Field(description="The role of the recommended specialization, e.g. ranged_damage.")
     recommended: TypeProbability
     top: list[TypeProbability] = Field(description="The five most probable class/specialization pairs.")
     entropy: float = Field(description="Uncertainty about the type in nats (ln 27 = 3.30 before any answer).")
@@ -678,6 +695,13 @@ class Confidence(BaseModel):
     probability: Optional[float] = Field(
         default=None, description="Probability the model gives the recommended specialization given the answers (confidence model)."
     )
+    class_probability: Optional[float] = Field(default=None, description="Probability the model gives the recommended class.")
+    role_probability: Optional[float] = Field(default=None, description="Probability the model gives specializations with a role like the recommended one's.")
+    overall: Optional[float] = Field(
+        default=None,
+        description="The confidence the Oracle states: the specialization's probability plus partial credit for the same class and for a similar role.",
+    )
+    role: Optional[str] = Field(default=None, description="The role of the recommended specialization.")
     class_gap: float
     strong_margin: float
     moderate_margin: float

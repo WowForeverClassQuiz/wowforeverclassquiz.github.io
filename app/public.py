@@ -80,8 +80,8 @@ def public_lengths(cfg: Config) -> list[PublicLength]:
         lengths.insert(0, PublicLength(
             id="adaptive", name="Confidence", adaptive=True, question_count=top, question_ids=[q.id for q in qs],
             minutes=minutes(ad.min_questions), minutes_max=minutes(top), min_questions=ad.min_questions, max_questions=top, confidence=ad.confidence,
-            description=f"Adaptive: the Oracle picks each question to learn the most and stops once it is {round(ad.confidence * 100)}% sure of your specialization "
-                        + (f"(at least {ad.min_questions} questions)." if ad.min_questions > 1 else f"(never more than {top} questions)."),
+            description=f"The Oracle picks each question to learn the most and stops once it is {round(ad.confidence * 100)}% sure of your specialization"
+                        + (f", after at least {ad.min_questions} questions." if ad.min_questions > 1 else "."),
         ))
     return lengths
 
