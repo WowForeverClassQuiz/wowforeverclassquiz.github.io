@@ -49,7 +49,7 @@ import random
 import itertools
 from dataclasses import dataclass
 from math import fsum, sqrt
-from typing import Optional, Sequence
+from typing import Any, Optional, Sequence
 
 from .models import (
     Alternatives,
@@ -207,6 +207,7 @@ class Compiled:
     spec_keys: tuple[str, ...]
     spec_multiplier: float
     active_specs: tuple[int, ...]  # specializations that some question gives direct weight
+    adaptive: Any = None  # AdaptiveSettings: the confidence-mode parameters
 
     @property
     def n_specs(self) -> int:
@@ -329,6 +330,7 @@ def compile_config(config: Config) -> Compiled:
         spec_keys=spec_keys,
         spec_multiplier=float(config.scoring.spec_weight_multiplier),
         active_specs=active_specs,
+        adaptive=config.scoring.adaptive,
     )
 
 
@@ -518,11 +520,21 @@ def evaluate(
 ) -> EvaluationResponse:
     """Score a set of selected answers to the questions of one quiz length. Pure: no I/O, no mutation of ``config``."""
     c = compiled or compile_config(config)
-    active = active_questions(c, length)
-    picks = resolve_answers(c, answers, active, length)
-    missing = [c.questions[i].id for i in active if c.questions[i].id not in answers]
-    if not picks or (missing and not allow_partial):
-        raise IncompleteAssessmentError(missing)
+    if length == "adaptive":
+        # confidence mode: the questions were chosen one at a time, so the quiz is exactly the questions that were answered
+        active = tuple(sorted(c.q_index[q] for q in answers if q in c.q_index))
+        picks = resolve_answers(c, answers, active, length)
+        missing = []
+        if not picks:
+            raise IncompleteAssessmentError(missing)
+        if len(picks) < c.adaptive.min_questions and not allow_partial:
+            raise ScoringError(f"Confidence mode needs at least {c.adaptive.min_questions} answers; got {len(picks)}.")
+    else:
+        active = active_questions(c, length)
+        picks = resolve_answers(c, answers, active, length)
+        missing = [c.questions[i].id for i in active if c.questions[i].id not in answers]
+        if not picks or (missing and not allow_partial):
+            raise IncompleteAssessmentError(missing)
 
     nc, nt = c.n_classes, c.n_traits
     if nc < 2:
@@ -652,8 +664,11 @@ def evaluate(
         label = "Clear lean"
     else:
         label = "Close call"
+    from .adaptive import Model     # imported here: adaptive.py builds on this module
+    probability = Model(c).posterior(picks)[p_spec.gidx]
     confidence = Confidence(
         label=label,
+        probability=_o(probability),
         class_gap=_o(gap),
         strong_margin=strong_margin,
         moderate_margin=moderate_margin,

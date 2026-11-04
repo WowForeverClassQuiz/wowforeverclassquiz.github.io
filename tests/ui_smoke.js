@@ -16,8 +16,8 @@
   const btn = (text, i = 0) => [...document.querySelectorAll("button")].filter((b) => b.textContent.trim() === text)[i];
   const go = async (hash, ms = 1100) => { location.hash = hash; await sleep(ms); };
   // A fixed answer set for all thirty questions -> Druid / Feral Combat on the seed configuration (the same set as tests/conftest.py;
-  // two questions are pick-two (pairs), three are rankings (orderings) and two spend six points (splits)).
-  const ANSWERS = { q01: "a", q02: "c", q03: "c", q04: "a", q05: "c", q06: "d", q07: "b>c>a>d", q08: "d", q09: "3-0-0-3", q10: "a", q11: "a>c>b>d", q12: "b", q13: "d", q14: "c",
+  // two questions are pick-two (pairs), three are rankings (orderings) and three spend six points (splits)).
+  const ANSWERS = { q01: "a", q02: "c", q03: "0-0-6-0", q04: "a", q05: "c", q06: "d", q07: "b>c>a>d", q08: "d", q09: "3-0-0-3", q10: "a", q11: "a>c>b>d", q12: "b", q13: "d", q14: "c",
     q15: "3-3-0-0", q16: "c", q17: "6", q18: "1", q19: "10", q20: "10", q21: "5", q22: "10", q23: "1", q24: "5", q25: "b+c", q26: "a>b>c>d", q27: "b+d", q28: "b", q29: "b", q30: "b" };
   const N = 30;
   /** Give the question currently on screen its response through the real controls. */
@@ -41,6 +41,23 @@
   // ---- 1. all thirty questions are accessible, in all five types -------------------------------------------------
   await go("#/", 500);
   const quiz = await api("/quiz");
+  // ---- the first page: credit line with version, build and date; a way to the class pages -----------------------------------------
+  const introText = document.getElementById("view").innerText;
+  const credit = document.querySelector(".credit");
+  const creditLink = credit?.querySelector("a");
+  check("the first page credits the developer, with a link to github.com/Anibru", !!credit && /Developed by Anibru/.test(credit.textContent) && creditLink?.href === "https://github.com/Anibru", credit?.textContent);
+  check("the credit line gives the version, build number and date", /v\d+\.\d+\.\d+/.test(credit?.textContent || "") && /build \S+/.test(credit?.textContent || "") && /(January|February|March|April|May|June|July|August|September|October|November|December) \d{1,2}, \d{4}/.test(credit?.textContent || ""), credit?.textContent);
+  check("the old 'scored right here in your browser' line is gone", !/scored right here in your browser/.test(introText) && !/Nothing is stored on the server/.test(introText));
+  check("the first page offers the classes", !!document.getElementById("browse-classes"));
+  document.getElementById("browse-classes").click(); await sleep(700);
+  check("the classes page lists nine classes, each linking to its own page", document.querySelectorAll(".spec-class").length === 9 && document.querySelectorAll("a.spec-class-head").length === 9);
+  document.querySelector("a.spec-class-head").click(); await sleep(700);
+  check("a class page shows what the class does and its three specializations", /What the .* does/.test(document.getElementById("view").innerText) && document.querySelectorAll(".spec-list .spec-tile").length === 3);
+  const classHeading = document.querySelector(".spec-page h1")?.textContent;
+  document.querySelector('a[rel="next"]').click(); await sleep(700);
+  check("Next on a class page moves to the next class", !!document.querySelector(".spec-page h1") && document.querySelector(".spec-page h1").textContent !== classHeading);
+  location.hash = "#/"; await sleep(500);
+
   // ---- 0. the three quiz lengths: pick, answer, read the result, then sharpen it with the extra questions -----------------------
   const byId = Object.fromEntries(quiz.questions.map((q) => [q.id, q]));
   const lengthOf = Object.fromEntries(quiz.lengths.map((l) => [l.id, l]));
@@ -51,16 +68,44 @@
     }
   };
   const picked = () => document.querySelector('input[name="quiz-length"]:checked')?.value;
-  check("the intro offers short, medium and long, with medium chosen first",
-    [...document.querySelectorAll('input[name="quiz-length"]')].map((i) => i.value).join() === "short,medium,long" && picked() === "medium", picked());
+  let page;
+  check("the intro offers confidence mode, short, medium and long, with confidence mode chosen first",
+    [...document.querySelectorAll('input[name="quiz-length"]')].map((i) => i.value).join() === "adaptive,short,medium,long" && picked() === "adaptive", picked());
   check("each option says how many questions it has", ["10 questions", "20 questions", "30 questions"].every((t) => document.querySelector(".lengths").innerText.includes(t)));
-  check("the intro line counts the chosen length's questions", /20 questions\. There are no right answers/.test(document.getElementById("view").innerText));
+  check("the intro line explains the chosen mode", /At least 10 questions, then the Oracle stops as soon as it is 90% sure/.test(document.getElementById("view").innerText));
+  // ---- confidence mode (the default): the Oracle picks each question and stops once it is sure ------------------------------------
+  const idByText = Object.fromEntries(quiz.questions.map((q) => [q.text, q.id]));
+  const until = async (test, ms = 4000) => { for (let t = 0; t < ms && !test(); t += 50) await sleep(50); return test(); };
+  check("confidence mode is offered first and says how it works", /Confidence/.test(document.querySelector(".lengths").innerText) && /10–30 questions/.test(document.querySelector(".lengths").innerText));
+  document.getElementById("begin").click(); await sleep(500);
+  let asked = 0, sawLabel = "";
+  for (let guard = 0; guard < 40; guard++) {
+    await until(() => document.querySelector(".question"));
+    const q = byId[idByText[document.querySelector(".question").textContent]];
+    await respond(q, ANSWERS[q.id]);
+    asked++;
+    await until(() => document.getElementById("reveal") || (document.getElementById("next") && !document.getElementById("next").disabled));
+    sawLabel = document.getElementById("certainty-label")?.textContent || sawLabel;
+    if (document.getElementById("reveal")) break;
+    document.getElementById("next").click(); await sleep(150);
+  }
+  check("it showed how sure it was while asking", /The Oracle is \d+% sure/.test(sawLabel) && !!document.querySelector(".certainty-bar .tick"), sawLabel);
+  check("it asked at least ten questions and stopped before the whole quiz", asked >= 10 && asked < 30, asked);
+  document.getElementById("reveal").click(); await sleep(2200);
+  page = document.getElementById("view").innerText;
+  check("the result is a confidence reading on the questions it asked", /Confidence reading/.test(page) && new RegExp(`${asked} questions`).test(page), asked);
+  check("the result states the model's confidence", /\d+% sure/.test(page) && (Number(/(\d+)% sure/.exec(page)[1]) >= 90), /(\d+)% sure/.exec(page)?.[0]);
+  check("the confidence reading found Druid / Feral Combat, like the full quiz", document.querySelector(".result-hero h1")?.textContent === "Druid" && document.querySelector(".result-hero h2")?.textContent === "Feral Combat");
+  check("a confidence reading offers no sharpening step", !document.getElementById("refine"));
+  document.getElementById("restart").click(); await sleep(100);
+
   document.querySelector('input[name="quiz-length"][value="short"]').click(); await sleep(100);
+  check("choosing a fixed length changes the intro line", /10 questions\. There are no right answers/.test(document.getElementById("view").innerText));
   document.getElementById("begin").click(); await sleep(100);
   check("the short quiz has ten questions", document.querySelectorAll(".dots button").length === 10 && /Question 1 of 10/.test(document.getElementById("view").innerText));
   await answerQuestions(lengthOf.short.question_ids);
   document.getElementById("reveal").click(); await sleep(2000);
-  let page = document.getElementById("view").innerText;
+  page = document.getElementById("view").innerText;
   check("the short reading says it is short and rests on ten questions", /Short reading/.test(page) && /10 questions/.test(page));
   check("the short result offers ten more questions", !!document.getElementById("refine") && /10 more questions/.test(document.getElementById("refine").textContent));
   document.getElementById("refine").click(); await sleep(150);
@@ -78,7 +123,7 @@
   check("the sharpened result is a medium reading on twenty questions", /Medium reading/.test(page) && /20 questions/.test(page));
   check("a medium result offers ten more", /10 more questions/.test(document.getElementById("refine")?.textContent || ""));
   document.getElementById("restart").click(); await sleep(100);
-  check("restarting offers the lengths again", picked() === "medium");
+  check("restarting offers the lengths again, confidence mode first", picked() === "adaptive");
   document.querySelector('input[name="quiz-length"][value="long"]').click(); await sleep(100);
 
   document.getElementById("begin").click(); await sleep(100);
@@ -147,6 +192,33 @@
   const expected = apiResult.rankings.classes.map((c) => [c.name, (c.score > 0 ? "+" : "") + c.score.toFixed(2)]);
   check("Class ranking on screen equals the API ranking", JSON.stringify(shown) === JSON.stringify(expected), JSON.stringify(shown.slice(0, 3)));
 
+  // ---- the "also in the stars" cards open specialization pages, which can be paged through; the result can be shared -----------------
+  const altLinks = [...document.querySelectorAll(".alt-link")];
+  check("both 'also in the stars' cards link to a specialization page", altLinks.length === 2 && altLinks.every((a) => /^#\/specs\/[a-z]+\/[a-z_]+$/.test(a.getAttribute("href"))), altLinks.map((a) => a.getAttribute("href")).join(","));
+  const share = document.getElementById("share-text");
+  check("the share blurb names the class and specialization, the numbers and a link", !!share && /Druid – Feral Combat/.test(share.value) && /Class scores: Druid \+[\d.]+/.test(share.value) && /https?:\/\//.test(share.value), share?.value);
+  check("a button copies the blurb", !!document.getElementById("share-copy"));
+  const onResult = document.getElementById("view").innerText;
+  check("the build shows neither 'how this was put together' nor its source", !/How this was put together/i.test(onResult) && !/Source:/.test(onResult));
+  const altText = altLinks[0].innerText;
+  location.hash = altLinks[0].getAttribute("href"); await sleep(900);
+  const specName = document.querySelector(".spec-page h2")?.textContent || "";
+  const onSpec = document.getElementById("view").innerText;
+  check("the first card opens that specialization's page", !!document.querySelector(".spec-page") && specName !== "" && altText.includes(specName), specName);
+  check("the page shows the defining traits with the participant's own scores", document.querySelectorAll(".trait-list li").length === 3 && document.querySelectorAll(".trait-score").length === 3);
+  check("the page has what the class does, the role and gear guide and a drawn build", /What the .* does/.test(onSpec) && /Role and gear for a/.test(onSpec) && document.querySelectorAll(".talent-tree").length === 3);
+  check("the page says how it relates to the result and does not call the build 'yours'", /Also in the stars/.test(onSpec) && !/Your build/.test(onSpec), "");
+  check("the page has no 'how this was put together' or source line", !/How this was put together/i.test(onSpec) && !/Source:/.test(onSpec));
+  document.querySelector('a[rel="next"]').click(); await sleep(700);
+  const nextName = document.querySelector(".spec-page h2")?.textContent;
+  check("Next moves to a different specialization", !!nextName && nextName !== specName, nextName);
+  document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true })); await sleep(700);
+  check("the left arrow key goes back", document.querySelector(".spec-page h2")?.textContent === specName);
+  location.hash = "#/specs"; await sleep(700);
+  check("the index lists all 27 specializations in nine classes", document.querySelectorAll(".spec-class").length === 9 && document.querySelectorAll(".spec-tile").length === 27);
+  [...document.querySelectorAll("a")].find((a) => /Back to my result/.test(a.textContent)).click(); await sleep(700);
+  check("back to my result shows the result again", !!document.querySelector(".result-hero"));
+
   // ---- 5. the scoring inspector reproduces the API's intermediate values -----------------------
   await go("#/admin/inspector", 1800);
   const q01 = document.querySelector("tbody tr.clickable");
@@ -182,6 +254,39 @@
   [...card.querySelectorAll("button")].find((b) => b.textContent === "Save").click(); await sleep(1500);
   check("Restoring the original weight restores the original score", Math.abs((await druidScore()) - before) < 1e-6);
   check("Configuration revision advanced by 2", (await api("/health")).config_revision === rev0 + 2, (await api("/health")).config_revision);
+
+
+  // ---- 7. the administrator can change what "share" copies ---------------------------------------------------------------------------
+  const originalShare = (await api("/quiz")).share_template;
+  await go("#/admin/profiles", 1500);
+  const shareArea = document.querySelector('textarea[aria-label="Share format"]');
+  check("Profiles has a share format editor with the current template and a preview", !!shareArea && shareArea.value === originalShare && /Druid/.test(document.querySelector(".share-preview")?.textContent || ""));
+  check("every placeholder has an insert button", document.querySelectorAll(".share-fields button").length === 13);
+  shareArea.value = "I am a {class} ({spec}) - {class_scores} - {link}"; shareArea.dispatchEvent(new Event("input", { bubbles: true })); await sleep(100);
+  check("the preview follows the template", /I am a Druid \(Feral Combat\) - Druid \+13\.39/.test(document.querySelector(".share-preview").textContent), document.querySelector(".share-preview").textContent);
+  const shareCard = shareArea.closest("section");
+  [...shareCard.querySelectorAll("button")].find((b) => b.textContent === "Save").click(); await sleep(1500);
+  check("the saved template reaches participants", (await api("/quiz")).share_template === "I am a {class} ({spec}) - {class_scores} - {link}");
+  const bad = await fetch("/api/v1/quiz", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ expected_revision: (await api("/health")).config_revision, share_template: "Hi {nobody}" }) });
+  check("a template with an unknown placeholder is refused", bad.status === 400, bad.status);
+  const area2 = document.querySelector('textarea[aria-label="Share format"]');
+  [...area2.closest("section").querySelectorAll("button")].find((b) => b.textContent === "Restore the original").click(); await sleep(100);
+  [...area2.closest("section").querySelectorAll("button")].find((b) => b.textContent === "Save").click(); await sleep(1500);
+  check("restoring the original brings the original template back", (await api("/quiz")).share_template === originalShare);
+
+
+  // ---- 8. the administrator can change how confidence mode behaves ---------------------------------------------------------------------
+  const thresholdNow = async () => (await (await fetch("/api/v1/adaptive/next", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ answers: {} }) })).json()).threshold;
+  await go("#/admin/profiles", 1500);
+  let conf = document.querySelector('input[aria-label="Stop at confidence (%)"]');
+  check("Profiles has the confidence-mode settings with the current values", !!conf && conf.value === "90" && document.querySelector('input[aria-label="Minimum questions"]')?.value === "10" && document.querySelector('input[aria-label="Maximum questions"]')?.value === "30", conf?.value);
+  conf.value = "95"; conf.dispatchEvent(new Event("input", { bubbles: true })); await sleep(100);
+  [...conf.closest("section").querySelectorAll("button")].find((b) => b.textContent === "Save").click(); await sleep(1500);
+  check("saving the threshold changes what the Oracle waits for", (await thresholdNow()) === 0.95);
+  conf = document.querySelector('input[aria-label="Stop at confidence (%)"]');
+  conf.value = "90"; conf.dispatchEvent(new Event("input", { bubbles: true })); await sleep(100);
+  [...conf.closest("section").querySelectorAll("button")].find((b) => b.textContent === "Save").click(); await sleep(1500);
+  check("restoring the threshold works", (await thresholdNow()) === 0.9);
 
   console.table(results);
   const failed = results.filter((r) => r.result === "FAIL");

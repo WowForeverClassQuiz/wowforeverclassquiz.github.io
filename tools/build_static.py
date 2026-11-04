@@ -10,6 +10,7 @@ What it produces::
     site/index.html          the page (the same one the local app serves, switched to static mode)
     site/static/             the browser code and styles (the administration views are left out)
     site/data/oracle.json    the questions, scoring tables and builds, exported from the configuration
+    site/oracle-math.pdf     the maths behind the selections (docs/oracle-math.pdf), when it exists
     site/.nojekyll           tells GitHub Pages to serve the files as they are
 
 Every path is relative, so the folder works from a site root (https://name.github.io/) and from a project
@@ -29,6 +30,7 @@ sys.path.insert(0, str(ROOT))
 from app.models import Config  # noqa: E402
 from app.seed import build_default_config  # noqa: E402
 from app.static_export import export_static_data  # noqa: E402
+from app.version import build_info  # noqa: E402
 
 SOURCE = ROOT / "app" / "static"
 MARKER = ".oracle-static-build"
@@ -66,7 +68,10 @@ def build(out: Path, cfg: Config) -> dict:
         raise SystemExit(f"{SOURCE / 'index.html'} no longer contains {MODE_TAG}")
     (out / "index.html").write_text(page.replace(MODE_TAG, MODE_TAG.replace("server", "static")), encoding="utf-8")
 
-    data = export_static_data(cfg)
+    pdf = ROOT / "docs" / "oracle-math.pdf"            # the maths, if it has been built (python tools/build_math_pdf.py)
+    if pdf.exists():
+        shutil.copyfile(pdf, out / "oracle-math.pdf")
+    data = export_static_data(cfg, build_info())
     (out / "data").mkdir()
     payload = json.dumps(data, separators=(",", ":"), ensure_ascii=False)
     (out / "data" / "oracle.json").write_text(payload, encoding="utf-8")

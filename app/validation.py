@@ -7,10 +7,11 @@ schema cannot express. It returns a list of human-readable problems (empty = val
 from __future__ import annotations
 
 import math
+import re
 from collections import Counter
 
 from .builds import validate_build
-from .models import Config
+from .models import SHARE_FIELDS, Config
 
 
 def _dupes(ids) -> list[str]:
@@ -60,9 +61,25 @@ def validate_config(config: Config) -> list[str]:
         errors.append("scoring.class_tie_break_order must list every class id exactly once.")
     if not math.isfinite(config.scoring.spec_weight_multiplier) or config.scoring.spec_weight_multiplier < 0:
         errors.append("scoring.spec_weight_multiplier must be a finite, non-negative number.")
+    ad = config.scoring.adaptive
+    pool = len([q for q in config.questions if q.enabled])
+    if ad.min_questions > ad.max_questions:
+        errors.append("adaptive.min_questions cannot exceed adaptive.max_questions.")
+    if ad.min_questions > pool:
+        errors.append(f"adaptive.min_questions ({ad.min_questions}) exceeds the {pool} enabled questions.")
+    if not all(math.isfinite(x) for x in (ad.confidence, ad.sharpness_class, ad.sharpness_spec)):
+        errors.append("adaptive settings must be finite numbers.")
     margins = config.scoring.confidence_margins
     if margins.strong < margins.moderate:
         errors.append("confidence_margins.strong must be at least confidence_margins.moderate.")
+
+    # -- share template ----------------------------------------------------------------
+    template = config.quiz.share_template
+    for name in re.findall(r"\{([^{}]*)\}", template):
+        if name not in SHARE_FIELDS:
+            errors.append(f"The share format uses an unknown placeholder '{{{name}}}'. Allowed: " + ", ".join(f"{{{f}}}" for f in SHARE_FIELDS) + ".")
+    if re.search(r"[{}]", re.sub(r"\{[^{}]*\}", "", template)):
+        errors.append("The share format has an unmatched brace; write placeholders like {class}.")
 
     # -- questions ---------------------------------------------------------------
     spec_key_strs = {f"{cl.id}/{sp.id}" for cl in config.classes for sp in cl.specializations}

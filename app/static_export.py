@@ -12,13 +12,13 @@ Privacy note: unlike the API, this data *does* contain every scoring weight, bec
 from __future__ import annotations
 
 from .models import Config
-from .public import default_build_detail, public_quiz
+from .public import default_build_detail, public_classes, public_quiz, spec_page
 from .scoring import compile_config
 
 FORMAT = 1
 
 
-def export_static_data(cfg: Config) -> dict:
+def export_static_data(cfg: Config, build: dict | None = None) -> dict:
     c = compile_config(cfg)
     classes = []
     for ci, cls in enumerate(c.classes):
@@ -67,6 +67,7 @@ def export_static_data(cfg: Config) -> dict:
                 builds[f"{cls.id}/{s.id}"] = detail.model_dump(mode="json", exclude_none=True)
     return {
         "format": FORMAT,
+        "build": build,                      # version, build number, commit and date shown on the first page
         "quiz": public_quiz(cfg).model_dump(mode="json"),
         "engine": {
             "revision": c.revision,
@@ -74,10 +75,17 @@ def export_static_data(cfg: Config) -> dict:
             "strong_margin": c.strong_margin,
             "moderate_margin": c.moderate_margin,
             "spec_multiplier": c.spec_multiplier,
+            "adaptive": c.adaptive.model_dump(),
             "traits": [{"id": i, "name": n, "reading": r} for i, n, r in zip(c.trait_ids, c.trait_names, c.trait_readings)],
             "classes": classes,
             "active_specs": list(c.active_specs),
             "questions": questions,
         },
         "builds": builds,
+        # the participant listing of classes, and the page of every specialization (its build is looked up in "builds")
+        "classes": public_classes(cfg, include_builds=False).model_dump(mode="json", exclude_none=True),
+        "specs": {
+            f"{cls.id}/{s.id}": spec_page(cfg, cls.id, s.id, include_build=False).model_dump(mode="json", exclude_none=True)
+            for cls in cfg.classes for s in cls.specializations
+        },
     }

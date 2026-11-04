@@ -423,3 +423,58 @@ dialog h3 { margin-top: 0; }
 .length-meta { color: var(--text-2); font-size: 0.88rem; align-self: center; font-variant-numeric: tabular-nums; }
 .length-blurb { grid-column: 1 / -1; color: var(--text-2); font-size: 0.88rem; }
 .length:has(input:checked) .length-name::before { content: "\2713  "; color: var(--accent); }
+
+/* ---- links from the result to other specializations ---- */
+.alt-link { display: grid; gap: 4px; padding: 12px 14px; margin-top: 10px; border: 1.5px solid var(--border); border-radius: 12px; background: var(--surface); color: inherit; text-decoration: none; transition: border-color 0.12s, background 0.12s; }
+.alt-link:hover, .alt-link:focus-visible { border-color: var(--accent); background: var(--accent-soft); }
+.alt-link .alt-line { display: flex; }
+.alt-go { color: var(--accent); font-weight: 600; font-size: 0.88rem; }
+.browse-link { display: inline-block; margin-top: 14px; color: var(--accent); font-weight: 600; text-decoration: none; }
+.browse-link:hover { text-decoration: underline; }
+.share textarea { width: 100%; resize: vertical; font: inherit; line-height: 1.45; padding: 10px 12px; border: 1.5px solid var(--border); border-radius: 10px; background: var(--surface-2); color: var(--text); }
+
+/* ---- specialization pages ---- */
+.spec-page { display: grid; gap: 16px; }
+.spec-top { flex-wrap: wrap; gap: 10px; }
+.spec-top select { max-width: 100%; }
+.spec-pager { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 8px; flex-wrap: wrap; }
+.spec-class-head { display: flex; gap: 12px; align-items: center; margin-bottom: 12px; }
+.spec-class-head h3, .spec-class-head p { margin: 0; }
+.spec-class .wow-icon { width: 36px; height: 36px; }
+.spec-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
+.spec-tile { position: relative; display: flex; gap: 10px; align-items: center; padding: 10px 12px; border: 1.5px solid var(--border); border-radius: 12px; background: var(--surface); color: inherit; text-decoration: none; }
+.spec-tile:hover, .spec-tile:focus-visible { border-color: var(--accent); background: var(--accent-soft); }
+.spec-tile small { display: block; color: var(--text-3); font-size: 0.78rem; }
+.tile-tag { position: absolute; top: 4px; right: 8px; font-style: normal; font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--accent); font-weight: 700; }
+.trait-list { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 14px; }
+.trait-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.trait-order { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-3); }
+.trait-score { margin-left: auto; font-weight: 700; font-variant-numeric: tabular-nums; }
+.trait-score.pos { color: var(--pos-ink); }
+.trait-score.neg { color: var(--neg-ink); }
+.trait-bar { display: block; height: 6px; border-radius: 3px; background: var(--border); margin: 6px 0 4px; overflow: hidden; }
+.trait-bar i { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
+.trait-list p { margin: 2px 0 0; font-size: 0.9rem; }
+
+.credit { margin-top: 24px; font-size: 0.85rem; }
+.credit a, a.plain { color: inherit; }
+.credit a { text-decoration: underline; }
+a.plain { text-decoration: none; }
+a.plain:hover { text-decoration: underline; }
+a.spec-class-head { color: inherit; text-decoration: none; border-radius: 10px; padding: 4px; margin: -4px -4px 8px; }
+a.spec-class-head:hover, a.spec-class-head:focus-visible { background: var(--accent-soft); }
+.spec-class-head .alt-go { font-size: 0.78rem; margin-left: 6px; }
+.spec-list { display: grid; gap: 10px; margin-top: 10px; }
+.spec-tile.wide { align-items: flex-start; }
+.spec-blurb { display: block; margin-top: 4px; font-size: 0.88rem; }
+
+/* ---- admin: share format ---- */
+.share-fields { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+.share-fields .btn { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.8rem; }
+.share-preview { white-space: pre-wrap; margin: 4px 0 0; padding: 10px 12px; border: 1px dashed var(--border-strong); border-radius: 10px; background: var(--surface-2); font: inherit; line-height: 1.45; }
+
+/* ---- confidence mode ---- */
+.certainty-bar { position: relative; overflow: visible; }
+.certainty-bar i { transition: width 0.4s ease; }
+.certainty-bar .tick { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--text-2); border-radius: 1px; }
+.certainty-note { font-size: 0.82rem; margin: 6px 0 12px; }

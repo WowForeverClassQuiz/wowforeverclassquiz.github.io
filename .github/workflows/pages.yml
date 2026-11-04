@@ -29,8 +29,9 @@ jobs:
           python-version: "3.11"
           cache: pip
 
+      # requirements-dev.txt adds numpy, so the large-sample balance checks (every class equally likely) run too.
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: pip install -r requirements-dev.txt
 
       # Nothing is published unless the scoring engines agree and every specialization is still reachable.
       - name: Run the tests

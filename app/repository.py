@@ -31,6 +31,7 @@ from .models import (
     ClassPatch,
     Config,
     QuestionPatch,
+    QuizPatch,
     ScoringPatch,
     SpecPatch,
     TalentCatalog,
@@ -490,9 +491,23 @@ class Repository:
 
         return self._commit(patch.expected_revision, "trait", f"Edited trait {trait_id}", fn)
 
+    def update_quiz(self, patch: QuizPatch) -> Committed:
+        def fn(cfg: Config):
+            fields = ("title", "subtitle", "share_template")
+            before = {f: getattr(cfg.quiz, f) for f in fields}
+            for f in fields:
+                value = getattr(patch, f)
+                if value is not None:
+                    setattr(cfg.quiz, f, value)
+            return cfg, {"target": "quiz", "before": before, "after": {f: getattr(cfg.quiz, f) for f in fields}}
+
+        return self._commit(patch.expected_revision, "quiz", "Edited quiz title, subtitle or share format", fn)
+
     def update_scoring(self, patch: ScoringPatch) -> Committed:
         def fn(cfg: Config):
             before = cfg.scoring.model_dump(mode="json")
+            if patch.adaptive is not None:
+                cfg.scoring.adaptive = patch.adaptive
             if patch.confidence_margins is not None:
                 cfg.scoring.confidence_margins = patch.confidence_margins
             if patch.class_tie_break_order is not None:

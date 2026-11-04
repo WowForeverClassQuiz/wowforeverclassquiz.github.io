@@ -15,11 +15,13 @@ Every entry is documented data, not a hidden adjustment: edit or delete any of t
   ORIGINAL_CLASS_PAIRS original answers whose (primary, secondary) classes changed, to even out how often each class
                        is favoured.
   SPEC_WEIGHTS         direct specialization weights ('class/spec' keys) for answers of any question.
+  CLASS_WEIGHTS        class weights other than the plain 2 / 1 (the same classes, other intensities), to equalize the classes.
   MIN_LENGTH           which questions the short and medium quizzes ask; the rest are asked only in the long quiz.
 """
 from __future__ import annotations
 
 TYPE_CHANGES = {
+    "q03": ("allocation", "You arrive alone in an unfamiliar city with six hours to spare. How do you divide them among these places?"),
     "q07": ("ranking", "Rank these kinds of weather from the one you would most like to the one you would least like."),
     "q09": ("allocation", "You have six hours at a large festival. How do you divide them among these places?"),
     "q11": ("ranking", "Rank these objects from the one you would most want to preserve for its beauty to the one you would least."),
@@ -35,6 +37,46 @@ ORIGINAL_CLASS_PAIRS = {
     ("q12", "c"): ("warlock", "mage"),
     ("q13", "a"): ("shaman", "druid"),
     ("q13", "c"): ("priest", "mage"),
+}
+
+#: Class weights that are not the plain 2 (primary) / 1 (secondary): the same two classes, different intensities, found by
+#: ``tools/equalize_classes.py`` so that every class is chosen equally often under random answers at every quiz length.
+CLASS_WEIGHTS: dict[tuple[str, str], dict[str, float]] = {
+    ("q17", "agree"): {"warrior": 1.5, "paladin": 1.5},
+    ("q03", "d"): {"mage": 1.75, "warlock": 1.25},
+    ("q04", "c"): {"paladin": 2.5, "priest": 0.5},
+    ("q25", "a"): {"paladin": 2.25, "warrior": 0.75},
+    ("q25", "b"): {"druid": 1.75, "shaman": 1.25},
+    ("q25", "d"): {"mage": 1.5, "warlock": 1.5},
+    ("q05", "a"): {"hunter": 2.5, "rogue": 0.5},
+    ("q05", "b"): {"warrior": 2.25, "paladin": 0.75},
+    ("q05", "c"): {"shaman": 2.5, "druid": 0.5},
+    ("q05", "d"): {"mage": 1.5, "warlock": 1.5},
+    ("q06", "b"): {"paladin": 1.75, "priest": 1.25},
+    ("q07", "a"): {"mage": 1.75, "priest": 1.25},
+    ("q07", "c"): {"warrior": 2.5, "shaman": 0.5},
+    ("q07", "d"): {"rogue": 1.75, "warlock": 1.25},
+    ("q19", "agree"): {"warlock": 1.75, "mage": 1.25},
+    ("q08", "b"): {"mage": 1.75, "rogue": 1.25},
+    ("q08", "d"): {"warlock": 1.5, "hunter": 1.5},
+    ("q28", "a"): {"priest": 1.5, "paladin": 1.5},
+    ("q28", "b"): {"rogue": 1.5, "warrior": 1.5},
+    ("q09", "d"): {"hunter": 1.75, "rogue": 1.25},
+    ("q20", "disagree"): {"warrior": 2.5, "shaman": 0.5},
+    ("q10", "b"): {"rogue": 1.75, "hunter": 1.25},
+    ("q10", "d"): {"warlock": 1.75, "shaman": 1.25},
+    ("q26", "d"): {"priest": 1.5, "shaman": 1.5},
+    ("q11", "b"): {"druid": 2.25, "warlock": 0.75},
+    ("q21", "disagree"): {"rogue": 1.5, "hunter": 1.5},
+    ("q29", "a"): {"mage": 1.75, "rogue": 1.25},
+    ("q13", "c"): {"priest": 2.25, "mage": 0.75},
+    ("q15", "a"): {"hunter": 2.5, "druid": 0.5},
+    ("q15", "b"): {"shaman": 2.5, "warrior": 0.5},
+    ("q15", "d"): {"mage": 1.75, "warlock": 1.25},
+    ("q23", "agree"): {"warrior": 1.75, "mage": 1.25},
+    ("q16", "c"): {"druid": 2.25, "hunter": 0.75},
+    ("q24", "agree"): {"shaman": 1.75, "warlock": 1.25},
+    ("q24", "disagree"): {"paladin": 1.75, "warrior": 1.25},
 }
 
 #: Questions asked in the short and medium quizzes (every other question is asked only in the long quiz). The quizzes are

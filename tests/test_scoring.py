@@ -135,7 +135,7 @@ def test_seed_has_thirty_questions_and_the_original_sixteen_keep_their_four_answ
     for q in [x for x in config.questions if x.id <= "q16"]:
         assert [a.id for a in q.answers] == ["a", "b", "c", "d"], q.id
         assert q.type == (TYPE_CHANGES[q.id][0] if q.id in TYPE_CHANGES else "choice"), q.id
-    assert Counter(q.type for q in config.questions) == {"choice": 15, "scale": 8, "pick_two": 2, "ranking": 3, "allocation": 2}
+    assert Counter(q.type for q in config.questions) == {"choice": 14, "scale": 8, "pick_two": 2, "ranking": 3, "allocation": 3}
 
 
 def test_new_questions_cover_the_question_types_and_every_class_and_specialization(config):
@@ -160,7 +160,7 @@ def test_new_questions_cover_the_question_types_and_every_class_and_specializati
         for a in q.answers:
             for k, w in a.class_weights.items():
                 weight[k] += w
-    assert max(weight.values()) - min(weight.values()) <= 4, dict(weight)
+    assert max(weight.values()) - min(weight.values()) <= 5, dict(weight)
 
 
 def test_new_questions_only_credit_specializations_of_the_classes_their_answer_favours(config):
@@ -185,18 +185,21 @@ def test_seed_has_twelve_traits(config):
 
 def test_seed_matches_independent_transcription_except_for_the_documented_tuning(config):
     """GOLDEN is the original quiz as specified. The seed may differ only where app/seed_tuning.py says so."""
-    from app.seed_tuning import ORIGINAL_CLASS_PAIRS
+    from app.seed_tuning import CLASS_WEIGHTS, ORIGINAL_CLASS_PAIRS
     seen, differing = 0, set()
     for line in GOLDEN.strip().splitlines():
         qid, aid, c1, c2, t1, t2 = line.split()
         answer = next(a for a in config.get_question(qid).answers if a.id == aid)
         assert answer.trait_weights == {t1: 2.0, t2: 1.0}, line               # traits are never retuned
+        pair = ORIGINAL_CLASS_PAIRS.get((qid, aid), (c1, c2))                  # a documented change of classes, or the original pair
+        assert set(answer.class_weights) == set(pair), line
+        expected = CLASS_WEIGHTS.get((qid, aid), {pair[0]: 2.0, pair[1]: 1.0})   # a documented change of intensities, or the plain 2 / 1
+        assert answer.class_weights == expected, line
         if answer.class_weights != {c1: 2.0, c2: 1.0}:
             differing.add((qid, aid))
-            assert ORIGINAL_CLASS_PAIRS[(qid, aid)] == tuple(answer.class_weights), line
         seen += 1
     assert seen == 64
-    assert differing == set(ORIGINAL_CLASS_PAIRS), "every overlay entry must really change an original answer"
+    assert differing == set(ORIGINAL_CLASS_PAIRS) | {k for k in CLASS_WEIGHTS if k[0] <= "q16"}, "every overlay entry must really change an original answer"
 
 
 def test_seed_specialization_profiles_match_specification(config):
@@ -209,9 +212,11 @@ def test_seed_specialization_profiles_match_specification(config):
 
 
 def test_every_answer_uses_two_distinct_classes_and_traits(config):
+    """Two classes whose weights add up to 3 (usually 2 and 1; the equalizing overlay moves up to a point between them, so every
+    complete answer set still has class scores that sum to zero), and two traits worth 2 and 1."""
     for q in config.questions:
         for a in q.answers:
-            assert sorted(a.class_weights.values()) == [1.0, 2.0]
+            assert len(a.class_weights) == 2 and abs(sum(a.class_weights.values()) - 3.0) < 1e-12
             assert sorted(a.trait_weights.values()) == [1.0, 2.0]
 
 
@@ -280,8 +285,8 @@ def test_evaluation_is_deterministic(config, druid_answers):
 def test_known_answer_set_produces_known_result(config, druid_answers):
     ev = evaluate(config, druid_answers)
     assert (ev.result.primary_class.id, ev.result.primary_specialization.id) == ("druid", "feral_combat")
-    assert [r.id for r in ev.rankings.classes][:2] == ["druid", "hunter"]
-    assert ev.alternatives.alternative_class.id == "hunter"
+    assert [r.id for r in ev.rankings.classes][:2] == ["druid", "shaman"]
+    assert ev.alternatives.alternative_class.id == "shaman"
     assert ev.metadata.complete and not ev.metadata.provisional
 
 

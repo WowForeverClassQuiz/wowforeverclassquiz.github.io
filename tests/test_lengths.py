@@ -14,6 +14,11 @@ from .conftest import DRUID_ANSWERS
 API = "/api/v1"
 
 
+def fixed_lengths(cfg):
+    """The nested short/medium/long quizzes (confidence mode, which is listed first, is tested in test_adaptive.py)."""
+    return [l for l in public_lengths(cfg) if not l.adaptive]
+
+
 def answers_for(cfg, length):
     """The fixed druid answers, restricted to the questions of one length."""
     ids = next(l.question_ids for l in public_lengths(cfg) if l.id == length)
@@ -22,8 +27,9 @@ def answers_for(cfg, length):
 
 def test_the_seed_offers_three_nested_lengths_of_ten_twenty_and_thirty_questions():
     cfg = build_default_config()
-    lengths = {l.id: l for l in public_lengths(cfg)}
-    assert [l.id for l in public_lengths(cfg)] == ["short", "medium", "long"]
+    lengths = {l.id: l for l in fixed_lengths(cfg)}
+    assert [l.id for l in public_lengths(cfg)] == ["adaptive", "short", "medium", "long"]
+    assert [l.id for l in fixed_lengths(cfg)] == ["short", "medium", "long"]
     assert [lengths[i].question_count for i in LENGTHS] == [10, 20, 30]
     assert set(lengths["short"].question_ids) < set(lengths["medium"].question_ids) < set(lengths["long"].question_ids)
     order = [q.id for q in cfg.enabled_questions()]
@@ -35,15 +41,15 @@ def test_the_seed_offers_three_nested_lengths_of_ten_twenty_and_thirty_questions
 def test_every_length_mixes_question_types_including_the_new_ones():
     cfg = build_default_config()
     kinds = {q.id: q.type for q in cfg.questions}
-    for l in public_lengths(cfg):
+    for l in fixed_lengths(cfg):
         types = {kinds[i] for i in l.question_ids}
         assert {"choice", "scale"} <= types and types & {"ranking", "allocation"}, (l.id, types)
 
 
-def test_the_public_quiz_lists_the_lengths_and_defaults_to_medium(client):
+def test_the_public_quiz_lists_the_lengths_and_defaults_to_confidence_mode(client):
     body = client.get(f"{API}/quiz").json()
-    assert body["question_count"] == 30 and len(body["questions"]) == 30 and body["default_length"] == "medium"
-    assert [l["id"] for l in body["lengths"]] == ["short", "medium", "long"]
+    assert body["question_count"] == 30 and len(body["questions"]) == 30 and body["default_length"] == "adaptive"
+    assert [l["id"] for l in body["lengths"]] == ["adaptive", "short", "medium", "long"]
     assert all(set(l["question_ids"]) <= {q["id"] for q in body["questions"]} for l in body["lengths"])
     assert not any("min_length" in q for q in body["questions"])   # tier assignments are configuration, not participant data
 
@@ -128,7 +134,7 @@ def test_a_configuration_without_tiers_is_just_the_long_quiz():
     cfg = build_default_config()
     for q in cfg.questions:
         q.min_length = "long"
-    lengths = public_lengths(cfg)
+    lengths = fixed_lengths(cfg)
     assert [l.id for l in lengths] == ["long"] and lengths[0].question_count == 30
     ev = evaluate(cfg, DRUID_ANSWERS, include_explanation=False)
     assert ev.metadata.total_questions == 30
@@ -138,7 +144,7 @@ def test_lengths_with_identical_questions_are_listed_once_under_the_longest_name
     cfg = build_default_config()
     for q in cfg.questions:
         q.min_length = "short"
-    assert [l.id for l in public_lengths(cfg)] == ["long"]
+    assert [l.id for l in fixed_lengths(cfg)] == ["long"]
 
 
 def test_an_old_database_without_the_column_reads_every_question_as_long(tmp_path):

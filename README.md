@@ -1,19 +1,20 @@
 # World of Warcraft: Forever - Character Oracle
 
 A personality quiz that recommends a **class, specialization and talent build** for
-*World of Warcraft: Forever*. Participants choose a **short (10), medium (20) or long (30)** reading; the questions are of five kinds (pick one, rate 1-10, pick two,
+*World of Warcraft: Forever*. By default it runs in **confidence mode**: it asks the most informative questions one at a time and stops once it is 90% sure of one
+specialization (at least 10 questions, at most 30). Participants can instead choose a fixed **short (10), medium (20) or long (30)** reading; the questions are of five kinds (pick one, rate 1-10, pick two,
 rank four, spend six points) and are scored with a transparent, deterministic algorithm. It comes in two editions that share one scoring engine:
 
 * **Local app** (run with Python, below): the quiz plus an administrative dashboard. Nothing leaves your machine.
-  * *Participant interface* (`/`): the quiz, a result reveal, and a build card.
+  * *Participant interface* (`/`): the quiz, a result reveal, class and specialization pages, a build card, and a shareable blurb.
   * *Administrative interface* (`/#/admin/...`): question editor, scoring inspector, simulation,
     profile editor, build editor, and configuration management (export, import, reset, history).
   * *REST API* (`/api/v1`): everything the interface does, documented at `/docs`.
 * **Static website** (`python tools/build_static.py`): only the quiz, as plain files for GitHub Pages or any static host,
   scored in the visitor's browser. See [Publish it as a website](#publish-it-as-a-website).
 
-Every specialization of every class can be the result, and under random answers each one wins at least 23% of its
-class's results; see [Balance](#balance-algorithm-120).
+Every specialization of every class can be the result. Under random answers every class is chosen equally often (to within
+about 0.3 percentage points) and each specialization wins at least 23% of its class's results; see [Balance](#balance-algorithm-130).
 
 ## Status of the talent builds (read this)
 
@@ -61,6 +62,45 @@ The scoring engine, API and interface are complete and tested. **The talent data
 and the class icon beside each class in the score chart. These are Blizzard's artwork. They are **not stored in this repository**: visitors' browsers load
 them from Wowhead's public icon server (`wow.zamimg.com`), which means that server sees the visitor's address when an icon loads. If an icon cannot
 load, a coloured badge takes its place. To host them yourself or drop them, change `ICON_BASE` in [app/static/icons.js](app/static/icons.js).
+
+## Confidence mode, and the maths
+
+**Confidence mode** (the default) works like a twenty-questions game. After each answer the Oracle works out how likely each of the 27 class/specialization pairs is,
+picks the unanswered question that will tell it the most, and stops as soon as the specialization the scoring currently recommends has reached **90%** (after at least 10
+questions; it never asks more than 30). A certainty meter shows how sure it is while you answer, and after the minimum you can also *Reveal now* at whatever certainty
+it has reached. The result then says which mode it was, how many questions it rests on and the model's confidence ("93% sure"). Simulated respondents need about 16
+questions on average; people who answer at random run to the limit and get a lower confidence and a weaker label.
+
+* **How the probability is defined.** A logit choice model: a person of each type is assumed to pick responses with probability proportional to exp(their contribution
+  to that type's scores). Bayes' rule over the 27 types then gives the probabilities; the quiz's own class and specialization scores *are* the evidence in it. The
+  "probabilities" are exact inside the model, and the model is an assumption about how people answer (its two sharpness constants say how consistently): treat
+  "90% sure" as "the answers are as consistent with one specialization as the model requires", not as a measured accuracy.
+* **Settings.** Admin > Profiles & Settings: whether the mode is offered, the minimum and maximum number of questions, the confidence threshold and the two sharpness
+  values. The browser edition runs the same code as the server (a test compares every step of whole question paths), and `POST /api/v1/adaptive/next` is the API
+  behind it.
+* **The maths document.** [docs/oracle-math.pdf](docs/oracle-math.pdf) explains every calculation behind a selection (response tables, baseline subtraction, class,
+  trait and specialization scores, ties, confidence labels, quiz lengths, the balance tables, the confidence model, its question choice and stopping rule, a worked
+  example, assumptions and limits) with tables of the numbers, and lists every question and answer weight. It is built from the live configuration and fixed-seed
+  simulations: rebuild it after changing anything with `python tools/build_math_pdf.py` (about 20 seconds; needs `pip install -r requirements-dev.txt`). The published
+  website carries a copy at `/oracle-math.pdf`.
+
+## Class and specialization pages, and sharing
+
+* **Class pages and specialization pages.** The first page has a *Browse the classes and specializations* button (and the navigation bar a *Classes* link). It opens an
+  index of the nine classes; each class has its own page (what it does, its three specializations), and each specialization has a page: the **traits that
+  define it** (primary, secondary and so on, with how much each counts and, once you have a result, your own score in each), what it does, its role and gear
+  guide and its build. Page through with *Previous/Next* or the left and right arrow keys. The **Also in the stars** cards on a result open the page of the
+  runner-up specialization and of your next-closest specialization in your class. Pages are served by `GET /api/v1/specializations/{class}/{spec}` and are
+  carried in the static site's data.
+* **Share your result.** The result page has a *Share your result* box: a short blurb with your class, specialization, your three best class scores and a link
+  to the quiz, which *Copy to share* puts on the clipboard (and *Share…* opens the phone's share sheet where there is one). An administrator can change the wording
+  in **Admin > Profiles > Share format**: write the text you like and put `{placeholders}` where details of the result should go (`{class}`, `{spec}`,
+  `{spec_score}`, `{class_scores}`, `{traits}`, `{confidence}`, `{questions}`, `{quiz_length}`, `{also_class}`, `{also_spec}`, `{next_spec}`, `{title}`, `{link}`);
+  a live preview uses a sample result. The format is saved with the configuration (`quiz.share_template`), so it is exported, imported and published with the
+  website like everything else. A template with an unknown placeholder or a stray brace is refused.
+* **Version stamp.** The first page ends with *Developed by Anibru* (linking to https://github.com/Anibru), the version (`APP_VERSION` in
+  [app/version.py](app/version.py); see [CHANGELOG.md](CHANGELOG.md)), the build number and the date. On the published site the build number is the GitHub Actions run
+  number and the commit is the short hash of the commit that was built; run locally they come from git, or read `dev` and `unknown` without it.
 
 ## Install and run
 
@@ -235,40 +275,46 @@ and allocation questions exactly 4, and scale questions exactly the two answers 
 
 ### Balance (algorithm 1.3.0)
 
-The requirement: **every class reachable, and every specialization the recommendation at least 20% of the time within its
-own class when the answers are random, at every quiz length.** "Random" here means every question answered uniformly at random over its possible
-responses (each of the ten ratings, each answer, each of the six pairs). It is a diagnostic of the scoring rules, not a model of
-real people, who do not answer uniformly. Measured on 100,000 random answer sets (`python tools/balance.py report --n 100000 --seed 4242`; for a ranking or an allocation every one of the 24 or 84 possible responses is equally likely). The table is the **long** quiz; the short and medium quizzes, measured the same way, are in the next lines:
+The requirement: **every class equally likely to be chosen, every specialization the recommendation at least 20% of the time within its own
+class, and all of it at every quiz length, when the answers are random.** "Random" here means every question answered uniformly at random over its
+possible responses (each of the ten ratings, each answer, each of the six pairs, each of the 24 orderings or 84 splits of points). It is a diagnostic of the
+scoring rules, not a model of real people, who do not answer uniformly: nothing can promise that people's real answers pick every class equally often.
+Measured on 100,000 random answer sets (`python tools/balance.py report --n 100000 --seed 4242`). The first table is the **long** quiz; the second compares the three lengths:
 
 | Class | Result share | Its specializations' shares within the class |
 |---|---|---|
-| Druid | 11.1% | Balance 36.1% · Feral Combat 28.8% · Restoration 35.1% |
-| Hunter | 10.0% | Beast Mastery 36.1% · Marksmanship 32.0% · Survival 31.9% |
-| Mage | 13.2% | Arcane 42.7% · Fire 25.9% · Frost 31.4% |
-| Paladin | 10.6% | Holy 30.9% · Protection 36.0% · Retribution 33.1% |
-| Priest | 11.8% | Discipline 33.4% · Holy 42.8% · Shadow 23.8% |
-| Rogue | 12.1% | Assassination 29.1% · Combat 31.0% · Subtlety 40.0% |
-| Shaman | 9.9% | Elemental 32.3% · Enhancement 34.7% · Restoration 33.0% |
-| Warlock | 11.1% | Affliction 37.4% · Demonology 31.6% · Destruction 31.0% |
-| Warrior | 10.2% | Arms 33.4% · Fury 37.7% · Protection 28.9% |
+| Druid | 11.1% | Balance 32.6% · Feral Combat 27.7% · Restoration 39.7% |
+| Hunter | 11.1% | Beast Mastery 35.2% · Marksmanship 34.0% · Survival 30.8% |
+| Mage | 11.2% | Arcane 34.9% · Fire 26.9% · Frost 38.2% |
+| Paladin | 11.1% | Holy 31.0% · Protection 40.1% · Retribution 28.9% |
+| Priest | 11.1% | Discipline 33.4% · Holy 40.9% · Shadow 25.7% |
+| Rogue | 11.1% | Assassination 34.3% · Combat 31.5% · Subtlety 34.2% |
+| Shaman | 11.1% | Elemental Combat 28.6% · Enhancement 31.4% · Restoration 39.9% |
+| Warlock | 11.1% | Affliction 37.2% · Demonology 38.9% · Destruction 23.8% |
+| Warrior | 11.2% | Arms 38.3% · Fury 35.9% · Protection 25.9% |
 
-| Quiz | Questions | Lowest specialization share | Class shares |
+| Quiz | Questions | Lowest specialization share | Class shares (an even split is 11.1%) |
 |---|---|---|---|
-| Short | 10 | 25.8% | 10.2% to 12.0% |
-| Medium | 20 | 23.9% | 10.1% to 11.9% |
-| Long | 30 | 23.8% | 9.9% to 13.2% |
+| Short | 10 | 24.1% | 10.8% to 11.4% |
+| Medium | 20 | 25.1% | 11.0% to 11.2% |
+| Long | 30 | 23.8% | 11.1% to 11.2% |
 
-The lowest share is 23.8% (Priest Shadow) and the highest 42.8% (Mage Arcane); classes range from 9.9% to 13.2% (an even split is 11.1%).
-`tests/test_balance.py` enforces at least 20% per specialization and 8-15% per class on a fixed seed, and `tests/test_question_types.py`
-checks by search that answers exist for all 27 specializations.
+Equal here means within a fraction of a percentage point of an even 11.1%: with answers that are discrete choices, an exactly equal share cannot be built
+in, but the remaining differences (about 0.3 points at most, on the short quiz) are as small as the measurement can resolve (100,000 samples give about
+0.1 points of noise). The lowest specialization share is 23.8% (Destruction Warlock) and the highest 40.9% (Holy Priest).
+`tests/test_balance.py` enforces at least 20% per specialization and every class within a point of even on a fixed seed (and within half a point on
+100,000 samples where numpy is installed), and `tests/test_question_types.py` checks by search that answers exist for all 27 specializations.
 
 **How it was reached, and what changed in the original sixteen questions.** The original trait profiles could not make some
 specializations win at all, and some classes were favoured far more than others (worst specialization 7.7% of its class,
 classes 8.5-14.5%). The fix is data, listed in [app/seed_tuning.py](app/seed_tuning.py) rather than hidden in code, and found with
 `tools/balance.py` plus a greedy search that was then reviewed by hand against each answer's meaning:
 
-* four original questions changed type with their answers unchanged: Q07 (weather) and Q11 (objects kept for their beauty) became **rankings**, Q09 (a festival) and Q15 (restoring a hard day) became **six-point splits**;
+* five original questions changed type with their answers unchanged: Q07 (weather) and Q11 (objects kept for their beauty) became **rankings**; Q03 (an unfamiliar city), Q09 (a festival) and Q15 (restoring a hard day) became **six-point splits**;
 * eight original answers have a different (primary, secondary) class pair, to even out how often each class is favoured;
+* **class intensities**: 35 answers shift up to a point of weight between their two classes (for example 2.5 and 0.5, or an even 1.5 and 1.5, instead of 2 and 1), found with
+  `tools/equalize_classes.py` so that every class is chosen equally often. The two classes of an answer and the total of 3 never change, so the class scores of a complete
+  answer set still sum to zero; Q01, the worked example in this document, is left as written;
 * **direct specialization weights** were added to 59 answers (25 of them answers of original questions) and the multiplier raised from 3.0 to 5.0;
 * the trait weights of the original sixteen questions and the class pairs of the other answers are untouched; every original question
   except Q14 carries at least one of these changes (the answers' wording is never altered, only the questions that changed type were reworded).
@@ -307,12 +353,15 @@ a stale value returns **409** and nothing changes. Errors use `{"detail": {"code
 | Endpoint | Purpose |
 |---|---|
 | `GET /quiz` | Questions and answers only, no scoring data; also the quiz lengths on offer and which questions each asks |
-| `GET /classes?include_scores&include_builds` | Classes, specializations, roles, build summaries |
-| `POST /evaluate` | Score a complete answer set for one quiz `length` (default `long`; `allow_partial`, `include_explanation`, `include_counterfactuals` for admins) |
+| `GET /classes?include_scores&include_builds` | Classes (with their overview text), specializations, roles, build summaries |
+| `GET /specializations/{class}/{spec}` | The page of one specialization: overview, defining traits, role and gear guide, default build with its talent trees |
+| `GET /version` | Version, build number, commit and date of this build |
+| `POST /adaptive/next` | Confidence mode: given the answers so far, how sure the Oracle is, the five most probable types, whether to stop, and which question to ask next |
+| `POST /evaluate` | Score an answer set for one quiz `length` (`short`, `medium`, `long`, or `adaptive` for exactly the questions answered; default `long`; `allow_partial`, `include_explanation`, `include_counterfactuals` for admins). Every result carries the model's `confidence.probability` |
 | `GET /config`, `/config/default`, `/config/export`, `/config/history[/{rev}]` | Read configuration, original seed, download, revisions |
 | `POST /config/import`, `/config/reset`, `/config/history/{rev}/restore` | Replace configuration (with backup) |
 | `POST /questions/expand` | Expand a (possibly unsaved) question into every possible response with raw and baseline-subtracted weights |
-| `PATCH /questions/{q}/answers/{a}`, `/questions/{q}`, `/classes/{c}/specs/{s}`, `/classes/{c}`, `/traits/{t}`, `/scoring` | Edits. Weight maps you send **replace** the whole map; omitted keys become 0 |
+| `PATCH /questions/{q}/answers/{a}`, `/questions/{q}`, `/classes/{c}/specs/{s}`, `/classes/{c}`, `/traits/{t}`, `/scoring`, `/quiz` (title, subtitle, share format) | Edits. Weight maps you send **replace** the whole map; omitted keys become 0 |
 | `POST /simulate`, `/simulate/batch` | What-if evaluation and random-answer diagnostics, for any quiz `length` (never persisted) |
 | `GET/POST/PATCH/DELETE /builds...`, `POST /builds/validate`, `POST /builds/{id}/default` | Build records |
 | `GET/PUT /talents/catalog` | Imported talent data |
@@ -359,10 +408,10 @@ most points and the build's role must fit the specialization.
 pytest
 ```
 
-238 automated tests cover scoring (normalization, ties, determinism, weight edits), the API (privacy of
+296 automated tests cover scoring (normalization, ties, determinism, weight edits), the API (privacy of
 `/quiz`, edits, persistence across restart, simulation purity, revision conflicts, import/export/reset),
 build validation (51 points, ranks, prerequisites, role consistency, verification rules), the draft talent catalog and the 27 draft builds
-with their installer, the guides, drawn talent trees and icons that the result page shows, the **balance** of the seed quiz at each length (`tests/test_balance.py`), the short/medium/long quizzes (`tests/test_lengths.py`), and the **static edition**: the JavaScript engine against
+with their installer, the guides, drawn talent trees and icons that the result page shows, the **balance** of the seed quiz at each length (`tests/test_balance.py`), the short/medium/long quizzes (`tests/test_lengths.py`), the share format and the specialization pages (`tests/test_share.py`, `tests/test_spec_pages.py`), the version stamp (`tests/test_version.py`), confidence mode and its browser twin (`tests/test_adaptive.py`), the maths PDF (`tests/test_math_pdf.py`), and the **static edition**: the JavaScript engine against
 the Python engine and the live API (`tests/test_static_parity.py`, needs `node`, skipped without it) and the site builder
 (`tests/test_build_static.py`).
 
@@ -386,16 +435,23 @@ app/seed_tuning.py  the documented balance overlay applied to the seed (type cha
 app/validation.py   cross-reference checks for a whole configuration
 app/public.py       the participant view (questions, builds) shared by the API and the static export
 app/drafts.py       loads the shipped draft talent catalog and builds into the seed
+app/version.py      the application version and the build stamp shown on the first page
+app/adaptive.py     confidence mode: the choice model, posterior, information gain and stopping rule
 app/spec_guides.py role and gear guidance for each specialization
 app/static_export.py  exports a configuration as the data file of the static site
 app/builds.py       build validation and presentation
 app/database.py     SQLite schema and transactions
 app/repository.py   configuration storage, revisions, backups
 app/static/         browser interface (plain ES modules, no build step); engine.js is the in-browser scoring engine,
-                    icons.js maps classes and specializations to their icons, talenttree.js draws a build
+                    icons.js maps classes and specializations to their icons, talenttree.js draws a build,
+                    parts.js holds the cards shared by result and specialization pages, share.js fills in the share format,
+                    views/specs.js is the class and specialization pages
 catalog/            draft Forever talent catalog and 27 draft builds, their build scripts, installer and reconciliation ledger
 tools/balance.py    balance report / parity at each quiz length (developer tool, needs numpy: requirements-dev.txt)
 tools/tune_weights.py  suggests direct specialization weights that keep every length balanced
+tools/equalize_classes.py  suggests class-weight intensities that make every class equally likely at every length
+tools/build_math_pdf.py  builds docs/oracle-math.pdf, the maths behind the selections, from the live configuration
+docs/               oracle-math.pdf
 tools/build_static.py  builds the static website into ./site
 .github/workflows/  GitHub Pages publishing workflow
 tests/              pytest suites and the browser smoke tests

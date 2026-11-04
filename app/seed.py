@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from .drafts import apply_drafts
 from .spec_guides import GUIDE_NOTE, GUIDES
-from .seed_tuning import MIN_LENGTH, ORIGINAL_CLASS_PAIRS, SPEC_WEIGHTS, TYPE_CHANGES
+from .seed_tuning import CLASS_WEIGHTS, MIN_LENGTH, ORIGINAL_CLASS_PAIRS, SPEC_WEIGHTS, TYPE_CHANGES
 from .models import (
     Answer,
     Build,
@@ -32,7 +32,7 @@ from .models import (
     Trait,
 )
 
-ALGORITHM_VERSION = "1.3.0"
+ALGORITHM_VERSION = "1.4.0"
 
 # Primary / secondary / tertiary multipliers for the original three-trait profiles.
 SPEC_MULTIPLIERS = (1.5, 1.0, 0.45)
@@ -551,6 +551,8 @@ def build_default_config(include_drafts: bool = True) -> Config:
         for a in q.answers:
             if (q.id, a.id) in ORIGINAL_CLASS_PAIRS:
                 a.class_weights = _weights(ORIGINAL_CLASS_PAIRS[(q.id, a.id)])
+            if (q.id, a.id) in CLASS_WEIGHTS:
+                a.class_weights = dict(CLASS_WEIGHTS[(q.id, a.id)])
             a.spec_weights = _spec_weights(SPEC_WEIGHTS.get((q.id, a.id), {}).items())
     for q in by_id.values():
         q.min_length = MIN_LENGTH.get(q.id, "long")

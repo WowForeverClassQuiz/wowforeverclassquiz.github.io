@@ -12,7 +12,8 @@ from app.scoring import batch_simulate
 from app.seed import QUESTIONS, build_default_config
 
 MIN_SPEC_SHARE = 0.20          # the requirement: a specialization wins at least this share of its class's results
-CLASS_BAND = (0.08, 0.15)      # no class should be starved or dominant (an even split is 1/9 = 11.1%)
+EVEN = 1 / 9                   # every class should be chosen equally often
+CLASS_TOLERANCE = 0.010        # in this test's 12,000 random answers that is about 3.4 standard errors; tools/balance.py checks tighter
 
 
 @pytest.fixture(scope="module", params=["short", "medium", "long"])
@@ -32,8 +33,8 @@ def test_every_specialization_wins_at_least_twenty_percent_of_its_class_under_ra
     assert low == {}, low
 
 
-def test_every_class_is_recommended_a_fair_share_of_the_time_at_every_length(shares):
-    out = {c: round(v, 3) for c, v in shares["class"].items() if not CLASS_BAND[0] <= v <= CLASS_BAND[1]}
+def test_every_class_is_recommended_equally_often_at_every_length(shares):
+    out = {c: round(v, 4) for c, v in shares["class"].items() if abs(v - EVEN) > CLASS_TOLERANCE}
     assert out == {}, out
 
 
@@ -79,6 +80,22 @@ def test_changes_to_the_original_questions_are_small():
     assert len(seed_tuning.ORIGINAL_CLASS_PAIRS) <= 10 and len(seed_tuning.TYPE_CHANGES) <= 6
 
 
+def test_class_weight_adjustments_keep_each_answers_classes_and_total():
+    """The equalizing overlay only moves weight between an answer's two classes: the classes and the total of 3 never change,
+    so the class scores of a complete answer set still sum to zero."""
+    cfg = build_default_config()
+    for (qid, aid), weights in seed_tuning.CLASS_WEIGHTS.items():
+        answer = next(a for a in cfg.get_question(qid).answers if a.id == aid)
+        assert answer.class_weights == weights and len(weights) == 2, (qid, aid)
+        assert abs(sum(weights.values()) - 3.0) < 1e-12, (qid, aid, weights)
+        assert 1.5 <= max(weights.values()) <= 2.5, (qid, aid, weights)
+        assert qid != "q01", "Q01 is the documentation's worked example and stays as written"
+    for q in cfg.questions:
+        for a in q.answers:
+            if q.type != "scale" or len(a.class_weights) == 2:
+                assert abs(sum(a.class_weights.values()) - 3.0) < 1e-12, (q.id, a.id)
+
+
 def test_trait_weights_of_the_original_questions_are_untouched():
     cfg = build_default_config()
     for qid, _text, answers in QUESTIONS:
@@ -101,3 +118,17 @@ def test_the_fast_balance_simulator_matches_the_scoring_engine():
         assert balance.parity(build_default_config(), k=100, length=length) == 0
         rep = balance.Sim(build_default_config(), n=20000, seed=3, length=length).report()
         assert min(v for specs in rep["spec"].values() for v in specs.values()) >= MIN_SPEC_SHARE, length
+
+
+def test_classes_are_equally_likely_to_a_tight_tolerance_on_a_large_sample():
+    """100,000 random answer sets per length: every class within half a percentage point of an even 1/9."""
+    pytest.importorskip("numpy")
+    import importlib.util
+    import pathlib
+    spec = importlib.util.spec_from_file_location("balance", pathlib.Path(__file__).resolve().parent.parent / "tools" / "balance.py")
+    balance = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(balance)
+    for length in ("short", "medium", "long"):
+        shares = balance.Sim(build_default_config(), n=100000, seed=20261105, length=length).report()["class"]
+        worst = max(abs(v - EVEN) for v in shares.values())
+        assert worst < 0.005, (length, {k: round(v, 4) for k, v in shares.items()})

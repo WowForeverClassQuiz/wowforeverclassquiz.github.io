@@ -37,11 +37,11 @@ def test_quiz_endpoint_does_not_reveal_scoring_data(client):
     by_type = {}
     for q in body["questions"]:
         by_type.setdefault(q["type"], []).append(q)
-    assert {k: len(v) for k, v in by_type.items()} == {"choice": 15, "scale": 8, "pick_two": 2, "ranking": 3, "allocation": 2}
+    assert {k: len(v) for k, v in by_type.items()} == {"choice": 14, "scale": 8, "pick_two": 2, "ranking": 3, "allocation": 3}
     assert all(len(q["answers"]) == 4 for q in by_type["pick_two"]) and all(q["pick_count"] == 2 for q in by_type["pick_two"])
     assert all(len(q["answers"]) == 4 and q["points"] is None for q in by_type["ranking"])
     assert all(len(q["answers"]) == 4 and q["points"] == 6 for q in by_type["allocation"])
-    assert sum(1 for q in by_type["choice"] if len(q["answers"]) == 4) == 12 and sum(1 for q in by_type["choice"] if len(q["answers"]) == 2) == 3
+    assert sum(1 for q in by_type["choice"] if len(q["answers"]) == 4) == 11 and sum(1 for q in by_type["choice"] if len(q["answers"]) == 2) == 3
     for q in by_type["scale"]:                       # the agree/disagree poles are scoring data and are never sent
         assert q["answers"] == [] and q["scale_min"] == 1 and q["scale_max"] == 10 and q["low_label"] and q["high_label"]
     blob = json.dumps(body)
@@ -134,7 +134,7 @@ def test_config_endpoint_returns_complete_scoring_data(client):
     assert scale["type"] == "scale" and [a["id"] for a in scale["answers"]] == ["agree", "disagree"]
     assert scale["answers"][0]["spec_weights"] == {"warrior/protection": 2.0, "paladin/protection": 1.0}
     assert scale["rationale"]
-    assert cfg["scoring"]["spec_weight_multiplier"] == 5.0 and cfg["scoring"]["algorithm_version"] == "1.3.0"
+    assert cfg["scoring"]["spec_weight_multiplier"] == 5.0 and cfg["scoring"]["algorithm_version"] == "1.4.0"
     assert cfg["classes"][0]["overview"] and cfg["classes"][0]["specializations"][0]["overview"]
     assert cfg["classes"][0]["specializations"][1]["trait_multipliers"] == {"wild": 1.5, "instinct": 1.0, "freedom": 0.45}
     assert cfg["scoring"]["class_tie_break_order"][0] == "druid"
@@ -424,7 +424,7 @@ def test_history_snapshot_can_be_restored(client):
 def test_health_endpoint(client):
     body = client.get(f"{API}/health").json()
     assert body["status"] == "ok" and body["class_count"] == 9 and body["specialization_count"] == 27
-    assert body["algorithm_version"] == "1.3.0" and body["question_count"] == 30
+    assert body["algorithm_version"] == "1.4.0" and body["question_count"] == 30
 
 
 def test_openapi_documentation_is_available_and_complete(client):

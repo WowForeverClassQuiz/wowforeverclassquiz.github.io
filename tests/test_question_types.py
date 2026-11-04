@@ -92,10 +92,11 @@ def test_pick_two_adds_the_two_items_and_averages_over_all_six_pairs(config):
     ab = next(o for o in ex.options if o.id == "a+b")
     assert ab.class_raw["paladin"] == item["a"].class_weights["paladin"]                     # item a's paladin weight
     assert ab.class_raw["druid"] == item["b"].class_weights["druid"]                          # item b's druid weight
-    # paladin appears only in item a, which is in 3 of the 6 pairs: baseline = 2 * 3 / 6 = 1
-    assert ex.class_baseline["paladin"] == pytest.approx(1.0)
-    assert ab.class_adjusted["paladin"] == pytest.approx(1.0)                                 # chosen with item a: +1
-    assert next(o for o in ex.options if o.id == "b+c").class_adjusted["paladin"] == pytest.approx(-1.0)
+    # paladin appears only in item a, which is in 3 of the 6 pairs: baseline = w * 3 / 6 = w / 2
+    w = item["a"].class_weights["paladin"]
+    assert ex.class_baseline["paladin"] == pytest.approx(w / 2)
+    assert ab.class_adjusted["paladin"] == pytest.approx(w / 2)                               # chosen with item a: +w/2
+    assert next(o for o in ex.options if o.id == "b+c").class_adjusted["paladin"] == pytest.approx(-w / 2)
 
 
 def test_pick_two_accepts_either_order_and_rejects_everything_else(config, druid_answers):
@@ -340,7 +341,7 @@ def test_an_untouched_first_release_database_is_upgraded_to_the_new_seed(tmp_pat
     assert {"type", "low_label", "high_label", "rationale"} <= columns(db, "questions")
     cfg = repo.get_config()
     assert cfg.revision == 1 and len(cfg.questions) == 30 and cfg.quiz.expected_question_count == 30
-    assert cfg.scoring.algorithm_version == "1.3.0" and cfg.classes[0].overview
+    assert cfg.scoring.algorithm_version == "1.4.0" and cfg.classes[0].overview
     assert repo.history()[0]["change_description"].startswith("Initial seed configuration (upgraded")
     client = TestClient(create_app(db))
     assert client.post(f"{API}/evaluate", json={"answers": DRUID_ANSWERS}).status_code == 200

@@ -14,6 +14,7 @@ const ADMIN_TABS = [
 
 const LOADERS = {
   "": () => import("./views/quiz.js"),
+  "specs": () => import("./views/specs.js"),
   "admin/questions": () => import("./views/editor.js"),
   "admin/inspector": () => import("./views/inspector.js"),
   "admin/simulate": () => import("./views/simulate.js"),
@@ -26,9 +27,15 @@ const view = document.getElementById("view");
 const adminNav = document.getElementById("adminnav");
 let navToken = 0;
 
+let routeArgs = [];
+
+/** The route name (a key of LOADERS) and, for specialization pages, the class and specialization ids that follow it. */
 function currentRoute() {
-  if (STATIC) return "";                         // the static edition has the participant quiz only
   const raw = location.hash.replace(/^#\/?/, "").replace(/\/$/, "");
+  const [first, ...rest] = raw.split("/");
+  routeArgs = [];
+  if (first === "specs") { routeArgs = rest; return "specs"; }
+  if (STATIC) return "";                         // the static edition has the participant pages only
   if (raw === "admin") return "admin/questions";
   return raw in LOADERS ? raw : "";
 }
@@ -45,8 +52,9 @@ async function route() {
   const mine = ++navToken;
   const isAdmin = name.startsWith("admin/");
 
+  const section = isAdmin ? "admin" : name === "specs" ? "specs" : "quiz";
   document.querySelectorAll("[data-nav]").forEach((a) => {
-    if ((a.dataset.nav === "admin") === isAdmin) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
+    if (a.dataset.nav === section) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
   });
   adminNav.hidden = !isAdmin;
   if (isAdmin) {
@@ -55,7 +63,7 @@ async function route() {
   } else {
     setRevision(null);
   }
-  view.classList.toggle("narrow", name === "");
+  view.classList.toggle("narrow", name === "" || name === "specs");
   document.title = (isAdmin ? ADMIN_TABS.find(([s]) => `admin/${s}` === name)[1] + " · " : "") + "Forever Character Oracle";
 
   clear(view).append(h("p", { class: "muted" }, "Loading…"));
@@ -63,7 +71,7 @@ async function route() {
     const mod = await LOADERS[name]();
     if (mine !== navToken) return;
     clear(view);
-    await mod.render(view);
+    await mod.render(view, routeArgs);
   } catch (err) {
     if (mine !== navToken) return;
     clear(view).append(h("div", { class: "card" }, h("h2", {}, "Something went wrong"), errorList(err),

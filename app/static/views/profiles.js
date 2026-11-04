@@ -3,6 +3,7 @@
 import { h, clear, toast, badge, errorList, roleLabel } from "../ui.js";
 import { get, patch } from "../api.js";
 import { state, ensureConfig } from "../state.js";
+import { DEFAULT_SHARE_TEMPLATE, SAMPLE_RESULT, SHARE_FIELDS, renderShare, shareValues } from "../share.js";
 
 let root, cfg, defaults;
 const drafts = new Map();   // key -> draft object; removed when saved or discarded
@@ -24,7 +25,12 @@ function savedForm(key) {
   if (kind === "trait") { const t = cfg.traits.find((x) => x.id === id); return { name: t.name, description: t.description, interpretation: t.interpretation }; }
   if (kind === "class") { const c = cfg.classes.find((x) => x.id === id); return { name: c.name, description: c.description, overview: c.overview || "" }; }
   if (kind === "spec") { const [cid, sid] = id.split("/"); const s = cfg.classes.find((c) => c.id === cid).specializations.find((x) => x.id === sid); return specForm(s); }
-  return { strong: cfg.scoring.confidence_margins.strong, moderate: cfg.scoring.confidence_margins.moderate, order: [...cfg.scoring.class_tie_break_order] };
+  if (kind === "share") return { template: cfg.quiz.share_template };
+  const ad = cfg.scoring.adaptive;
+  return {
+    strong: cfg.scoring.confidence_margins.strong, moderate: cfg.scoring.confidence_margins.moderate, order: [...cfg.scoring.class_tie_break_order],
+    adaptive: { enabled: ad.enabled, min: ad.min_questions, max: ad.max_questions, confidence: Math.round(ad.confidence * 10000) / 100, lc: ad.sharpness_class, ls: ad.sharpness_spec },
+  };
 }
 const specForm = (s) => ({ description: s.description, overview: s.overview || "", rows: Object.entries(s.trait_multipliers).map(([t, m]) => [t, m]) });
 const draftFor = (key) => { if (!drafts.has(key)) drafts.set(key, clone(savedForm(key))); return drafts.get(key); };
@@ -66,10 +72,35 @@ function draw() {
   clear(root).append(
     h("div", { class: "page-head" }, h("div", {}, h("h1", {}, "Profiles & Settings"),
       h("p", {}, "Edit trait names, specialization trait profiles, class descriptions and scoring settings. Changes take effect for the next evaluation and create a new revision."))),
+    shareCard(),
     scoringCard(),
     traitsCard(),
     ...cfg.classes.map(classCard),
   );
+}
+
+// ---- share format ----------------------------------------------------------------------------------
+/** The text a participant copies from "Share your result": a template with {placeholders}, previewed on a sample result. */
+function shareCard() {
+  const key = "share", d = draftFor(key);
+  const card = h("section", { class: "card answer-card" });
+  const preview = h("pre", { class: "share-preview", "aria-label": "Preview with a sample result" });
+  const paint = () => { preview.textContent = renderShare(d.template, shareValues(SAMPLE_RESULT, { link: "https://example.com/oracle/", title: cfg.quiz.title })); };
+  const area = h("textarea", { rows: 6, "aria-label": "Share format", oninput: () => { d.template = area.value; paint(); card.refresh(); } }, d.template);
+  const insert = (name) => {
+    const at = area.selectionStart ?? area.value.length, end = area.selectionEnd ?? at;
+    area.setRangeText(`{${name}}`, at, end, "end");
+    d.template = area.value; area.focus(); paint(); card.refresh();
+  };
+  paint();
+  card.append(h("h3", {}, "Share format"),
+    h("p", { class: "muted", style: { fontSize: "0.88rem" } }, "The text a participant copies from “Share your result”. Write it as you like and put a {placeholder} wherever a detail of their result should go. Click a placeholder to insert it at the cursor."),
+    area,
+    h("div", { class: "share-fields" }, SHARE_FIELDS.map(([name, text]) => h("button", { class: "btn small ghost", type: "button", title: text, onclick: () => insert(name) }, `{${name}}`))),
+    h("h4", {}, "Preview"), preview,
+    actions(key, card, () => save(key, () => patch("/quiz", { expected_revision: cfg.revision, share_template: d.template }), "Share format saved"),
+      [h("button", { class: "btn small", type: "button", onclick: () => { d.template = DEFAULT_SHARE_TEMPLATE; area.value = d.template; paint(); card.refresh(); } }, "Restore the original")]));
+  return card;
 }
 
 // ---- scoring settings ----------------------------------------------------------------------------
@@ -85,13 +116,29 @@ function scoringCard() {
       h("button", { class: "btn small ghost", type: "button", disabled: i === d.order.length - 1, "aria-label": "Move down", onclick: () => { [d.order[i + 1], d.order[i]] = [d.order[i], d.order[i + 1]]; paintOrder(); card.refresh(); } }, "↓")))));
   };
   paintOrder();
+  const a = d.adaptive;
+  const num = (label, key, props = {}) => {
+    const input = h("input", { type: "number", value: String(a[key]), "aria-label": label, ...props, oninput: () => { a[key] = Number(input.value); card.refresh(); } });
+    return field(label, input);
+  };
+  const enabled = h("input", { type: "checkbox", checked: a.enabled, "aria-label": "Confidence mode on", onchange: () => { a.enabled = enabled.checked; card.refresh(); } });
   card.append(h("h3", {}, "Scoring settings"),
+    h("div", { class: "stack", style: { marginBottom: "16px" } },
+      h("h4", {}, "Confidence mode (the default way to take the quiz)"),
+      h("p", { class: "muted", style: { fontSize: "0.88rem" } }, "The Oracle asks the most informative question each time and stops once the model's probability for one specialization reaches the threshold (never before the minimum, never after the maximum). The sharpness values say how consistently people are assumed to answer as their type: higher means fewer questions. See docs/oracle-math.pdf."),
+      h("label", { class: "row" }, enabled, "Offer confidence mode"),
+      h("div", { class: "row", style: { flexWrap: "wrap" } },
+        num("Minimum questions", "min", { min: "1", step: "1" }), num("Maximum questions", "max", { min: "1", step: "1" }),
+        num("Stop at confidence (%)", "confidence", { min: "1", max: "99", step: "1" }),
+        num("Class sharpness", "lc", { min: "0.05", step: "0.05" }), num("Specialization sharpness", "ls", { min: "0.05", step: "0.05" }))),
     h("div", { class: "grid two" },
       h("div", { class: "stack" }, h("h4", {}, "Confidence descriptor margins"),
         h("p", { class: "muted", style: { fontSize: "0.88rem" } }, "Heuristic wording based on the gap between the top two class scores. Not a statistical estimate."),
         h("div", { class: "row" }, field("“Strong lean” at gap ≥", strong), field("“Clear lean” at gap ≥", moderate))),
       h("div", {}, h("h4", {}, "Class tie-break order"), h("p", { class: "muted", style: { fontSize: "0.88rem" } }, "Equal class scores resolve in this order (top wins)."), list)),
-    actions(key, card, () => save(key, () => patch("/scoring", { expected_revision: cfg.revision, confidence_margins: { strong: d.strong, moderate: d.moderate }, class_tie_break_order: d.order }), "Scoring settings saved")));
+    actions(key, card, () => save(key, () => patch("/scoring", { expected_revision: cfg.revision, confidence_margins: { strong: d.strong, moderate: d.moderate }, class_tie_break_order: d.order,
+      adaptive: { enabled: d.adaptive.enabled, min_questions: d.adaptive.min, max_questions: d.adaptive.max, confidence: d.adaptive.confidence / 100,
+        sharpness_class: d.adaptive.lc, sharpness_spec: d.adaptive.ls } }), "Scoring settings saved")));
   return card;
 }
 

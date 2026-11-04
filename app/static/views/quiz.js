@@ -1,9 +1,11 @@
 // Participant interface: the assessment and the result reveal. Never requests scoring weights.
-import { h, append, clear, fmt, signed, titleCase, roleLabel, purposeLabel, badge, toast, copyText, download, barChart, chartLegend, errorList, CLASS_COLORS } from "../ui.js";
+import { h, append, clear, fmt, signed, roleLabel, toast, copyText, download, barChart, chartLegend, errorList, CLASS_COLORS } from "../ui.js";
 import { get, post, STATIC } from "../api.js";
 import { state } from "../state.js";
 import { classIcon, specIcon, spellName } from "../icons.js";
-import { talentTrees, dataNotice } from "../talenttree.js";
+import { overviewCard, guideCard, buildCard } from "../parts.js";
+import { longDate } from "../talenttree.js";
+import { DEFAULT_SHARE_TEMPLATE, renderShare, shareValues } from "../share.js";
 
 let root = null;
 /** Null-safe: Element.append(null) would print the word "null" into the page. */
@@ -13,6 +15,7 @@ let keyHandlerInstalled = false;
 export async function render(container) {
   root = container;
   if (!state.quiz) state.quiz = await get("/quiz");
+  if (state.version === undefined) state.version = await get("/version").catch(() => null);
   installKeys();
   draw();
 }
@@ -21,41 +24,77 @@ function draw() {
   clear(root);
   if (state.result) return drawResult();
   if (!state.started) return drawIntro();
+  if (isAdaptive()) return drawAdaptiveQuestion();
   drawQuestion();
 }
 
 /** The quiz lengths on offer (an older server or configuration may offer none: then the whole quiz is the only length). */
 const lengths = () => state.quiz.lengths || [];
 const currentLength = () => lengths().find((l) => l.id === state.length) || lengths().find((l) => l.id === state.quiz.default_length) || lengths()[lengths().length - 1] || null;
-/** The questions of the chosen length, in quiz order. */
+/** Confidence mode (the default): the Oracle chooses each next question and stops once it is sure. */
+const isAdaptive = () => !!currentLength()?.adaptive;
+state.asked ||= [];          // confidence mode: the ids of the questions asked so far, in the order they were asked
+const byId = (id) => state.quiz.questions.find((q) => q.id === id);
+/** The questions of the chosen length, in quiz order (confidence mode: the ones asked so far, in the order asked). */
 const questions = () => {
   const len = currentLength();
-  return len ? len.question_ids.map((id) => state.quiz.questions.find((q) => q.id === id)).filter(Boolean) : state.quiz.questions;
+  if (len && len.adaptive) return state.asked.map(byId).filter(Boolean);
+  return len ? len.question_ids.map(byId).filter(Boolean) : state.quiz.questions;
 };
 const total = () => questions().length;
 const answered = () => questions().filter((q) => state.answers[q.id]).length;
-const complete = () => answered() === total();
-const nextLength = () => { const ls = lengths(), i = ls.findIndex((l) => l.id === currentLength()?.id); return i >= 0 && i < ls.length - 1 ? ls[i + 1] : null; };
+const complete = () => (isAdaptive() ? answered() === total() && total() >= (state.status?.min_questions ?? 1) : answered() === total());
+const nextLength = () => {
+  if (isAdaptive()) return null;
+  const ls = lengths().filter((l) => !l.adaptive), i = ls.findIndex((l) => l.id === currentLength()?.id);
+  return i >= 0 && i < ls.length - 1 ? ls[i + 1] : null;
+};
+const askedAnswers = () => Object.fromEntries(state.asked.filter((id) => state.answers[id]).map((id) => [id, state.answers[id]]));
+const answersKey = () => JSON.stringify(Object.entries(askedAnswers()).sort());
 const firstUnanswered = () => Math.max(0, questions().findIndex((q) => !state.answers[q.id]));
 
 // ---------------------------------------------------------------------------- intro
+function introCount() {
+  const len = currentLength();
+  return len && len.adaptive
+    ? `At least ${len.min_questions} questions, then the Oracle stops as soon as it is ${Math.round(len.confidence * 100)}% sure (${len.max_questions} at most).`
+    : `${total()} questions.`;
+}
+
 function drawIntro() {
-  const resuming = answered() > 0;
+  const resuming = Object.keys(state.answers).length > 0;
   put(
     h("section", { class: "hero" },
       h("div", { class: "sigil", "aria-hidden": "true" }, "✦"),
       h("h1", {}, state.quiz.title),
       h("p", { class: "sub" }, state.quiz.subtitle || "A short reading of your temperament."),
       lengthPicker(),
-      h("p", { class: "sub" }, `${total()} questions. There are no right answers; choose whatever draws you first.`),
-      h("button", { class: "btn primary large", type: "button", id: "begin", onclick: () => { state.started = true; state.length = currentLength()?.id || null; state.index = resuming ? firstUnanswered() : 0; draw(); } },
-        resuming ? "Continue your reading" : "Begin"),
-      h("p", { class: "muted", style: { marginTop: "28px", fontSize: "0.85rem" } },
-        STATIC ? "Your answers are scored right here in your browser. Nothing is sent or stored anywhere."
-          : "Your answers stay in this browser tab. Nothing is stored on the server."),
+      h("p", { class: "sub" }, `${introCount()} There are no right answers; choose whatever draws you first.`),
+      h("button", { class: "btn primary large", type: "button", id: "begin", onclick: begin }, resuming ? "Continue your reading" : "Begin"),
+      h("p", { style: { marginTop: "14px" } }, h("a", { class: "btn ghost", href: "#/specs", id: "browse-classes" }, "Browse the classes and specializations")),
+      credit(),
     ),
   );
   document.getElementById("begin").focus();
+}
+
+function begin() {
+  state.length = currentLength()?.id || null;
+  if (isAdaptive()) return beginAdaptive();
+  state.started = true;
+  state.index = Object.keys(state.answers).length ? firstUnanswered() : 0;
+  draw();
+}
+
+/** "Developed by Anibru" (a link to github.com/Anibru) with the version, build number, commit and date of this build. */
+function credit() {
+  const v = state.version || {};
+  const when = v.date ? longDate(v.date) : "";
+  return h("p", { class: "muted credit" }, "Developed by ",
+    h("a", { href: v.developer_url || "https://github.com/Anibru", target: "_blank", rel: "noopener noreferrer" }, v.developer || "Anibru"),
+    v.version ? ` · v${v.version}` : "",
+    v.build ? ` · build ${v.build}${v.commit && v.commit !== "unknown" ? ` (${v.commit})` : ""}` : "",
+    when ? ` · ${when}` : "");
 }
 
 /** Short / medium / long: how many questions to answer. Nothing is chosen for you except the middle one when it exists. */
@@ -68,7 +107,7 @@ function lengthPicker() {
     ls.map((l) => h("label", { class: "length" },
       h("input", { type: "radio", name: "quiz-length", value: l.id, checked: chosen.id === l.id, onchange: () => { state.length = l.id; draw(); document.querySelector(`input[name="quiz-length"][value="${l.id}"]`)?.focus(); } }),
       h("span", { class: "length-name" }, l.name),
-      h("span", { class: "length-meta" }, `${l.question_count} questions · about ${l.minutes} min`),
+      h("span", { class: "length-meta" }, l.adaptive ? `${l.min_questions}–${l.max_questions} questions · about ${l.minutes}–${l.minutes_max} min` : `${l.question_count} questions · about ${l.minutes} min`),
       h("span", { class: "length-blurb" }, l.description))));
 }
 
@@ -123,6 +162,90 @@ function drawQuestion() {
     ...(isLast && missing > 0
       ? [h("p", { class: "muted", style: { textAlign: "right", marginTop: "10px" } }, `${missing} question${missing === 1 ? " is" : "s are"} still unanswered. Use the dots above to find ${missing === 1 ? "it" : "them"}.`)]
       : []),
+    h("p", { class: "muted", style: { fontSize: "0.82rem", marginTop: "18px" } }, TIPS[q.type] || TIPS.choice),
+  );
+}
+
+// ---------------------------------------------------------------------------- confidence mode
+let statusLoading = false;
+
+/** Ask the engine how sure it is and what to ask next, once per distinct set of answers. */
+function ensureStatus() {
+  const key = answersKey();
+  if (state.statusFor === key || statusLoading || state.statusFailed === key) return;
+  statusLoading = true;
+  post("/adaptive/next", { answers: askedAnswers() })
+    .then((s) => { state.status = s; state.statusFor = key; state.statusFailed = null; })
+    .catch((err) => { state.statusFailed = key; toast(err.message || "Could not reach the Oracle.", "bad"); })
+    .finally(() => { statusLoading = false; if (state.started && !state.result && isAdaptive()) draw(); });
+}
+
+async function beginAdaptive() {
+  state.started = true;
+  state.asked = state.quiz.questions.filter((q) => state.answers[q.id]).map((q) => q.id);    // answers kept from an earlier try
+  clear(root); put(h("p", { class: "muted", role: "status" }, "Choosing the first question…"));
+  try {
+    state.status = await post("/adaptive/next", { answers: askedAnswers() });
+    state.statusFor = answersKey();
+    const next = state.status.next_question_id;
+    if (next && !state.asked.includes(next)) state.asked.push(next);
+  } catch (err) {
+    state.started = false; toast(err.message || "Could not reach the Oracle.", "bad");
+  }
+  state.index = Math.max(0, questions().findIndex((q) => !state.answers[q.id]));
+  draw();
+}
+
+function certainty(i, s, fresh) {
+  const pct = s ? Math.round(s.confidence * 100) : 0;
+  return h("div", { class: "certainty" },
+    h("div", { class: "progress-label" }, h("span", {}, `Question ${i + 1}`),
+      h("span", { id: "certainty-label" }, s ? `The Oracle is ${pct}% sure${fresh ? "" : " …"}` : "Thinking…")),
+    h("div", { class: "progress certainty-bar", role: "progressbar", "aria-valuemin": 0, "aria-valuemax": 100, "aria-valuenow": pct, "aria-label": "How sure the Oracle is" },
+      h("i", { style: { width: `${pct}%` } }), s ? h("b", { class: "tick", style: { left: `${s.threshold * 100}%` }, title: `It stops at ${Math.round(s.threshold * 100)}%` }) : null),
+    s ? h("p", { class: "muted certainty-note" },
+      `It asks the questions that tell it the most and stops once it is ${Math.round(s.threshold * 100)}% sure, after at least ${s.min_questions} questions (${s.max_questions} at most).`) : null);
+}
+
+function drawAdaptiveQuestion() {
+  ensureStatus();
+  const qs = questions();
+  if (!qs.length) return put(h("div", { class: "card" }, h("p", {}, "There are no questions to ask."), h("button", { class: "btn", type: "button", onclick: restart }, "Back")));
+  state.index = Math.min(state.index, qs.length - 1);
+  const i = state.index, q = qs[i], chosen = state.answers[q.id];
+  const s = state.status, fresh = state.statusFor === answersKey();
+  const lastAsked = i === qs.length - 1;
+  const dots = h("div", { class: "dots", role: "group", "aria-label": "Questions asked so far" },
+    qs.map((qq, k) => h("button", {
+      type: "button", class: `${state.answers[qq.id] ? "done" : ""} ${k === i ? "current" : ""}`,
+      "aria-label": `Question ${k + 1}${state.answers[qq.id] ? ", answered" : ", unanswered"}`, "aria-current": k === i ? "step" : null,
+      onclick: () => { state.index = k; draw(); },
+    })));
+  const groupId = `q-${q.id}`;
+  const control = ({ scale: scaleControl, pick_two: pickControl, ranking: rankingControl, allocation: allocationControl }[q.type] || choiceControl)(q, groupId);
+
+  let next;
+  if (lastAsked && fresh && s && s.done) {
+    next = h("button", { class: "btn primary large", type: "button", id: "reveal", disabled: !chosen, onclick: reveal }, "Reveal my reading");
+  } else {
+    next = h("button", { class: "btn primary", type: "button", id: "next", disabled: !chosen || (lastAsked && !fresh), onclick: () => {
+      if (lastAsked && s && s.next_question_id && !state.asked.includes(s.next_question_id)) state.asked.push(s.next_question_id);
+      state.index = i + 1; draw();
+    } }, lastAsked && chosen && !fresh ? "Thinking…" : "Next");
+  }
+  put(
+    certainty(i, s, fresh),
+    dots,
+    h("p", { class: "eyebrow-q" }, EYEBROWS[q.type] || EYEBROWS.choice),
+    h("h2", { class: "question", id: groupId }, q.text),
+    control,
+    h("div", { class: "nav-row" },
+      h("button", { class: "btn", type: "button", id: "prev", disabled: i === 0, onclick: () => { state.index = i - 1; draw(); } }, "Previous"),
+      next),
+    lastAsked && fresh && s && s.can_reveal && !s.done && chosen
+      ? h("p", { style: { textAlign: "right", marginTop: "10px" } }, h("button", { class: "linkish", type: "button", id: "reveal-now", onclick: reveal },
+        `Reveal now (${Math.round(s.confidence * 100)}% sure)`))
+      : null,
     h("p", { class: "muted", style: { fontSize: "0.82rem", marginTop: "18px" } }, TIPS[q.type] || TIPS.choice),
   );
 }
@@ -302,6 +425,7 @@ async function reveal() {
 // ---------------------------------------------------------------------------- result
 function restart() {
   state.answers = {}; state.picks = {}; state.index = 0; state.started = false; state.result = null; state.length = null;
+  state.asked = []; state.status = null; state.statusFor = null; state.statusFailed = null;
   draw();
   window.scrollTo(0, 0);
 }
@@ -320,6 +444,27 @@ function refineButton() {
   return h("button", { class: "btn", type: "button", id: "refine", onclick: () => {
     state.length = next.id; state.started = true; state.result = null; state.index = firstUnanswered(); draw(); window.scrollTo(0, 0);
   } }, `Sharpen it: ${more} more question${more === 1 ? "" : "s"} (${next.name.toLowerCase()})`);
+}
+
+/** The link a shared result points to: this page itself (without the #/ route), where anyone can take the quiz. */
+const pageUrl = () => `${location.origin}${location.pathname}`;
+
+/** The blurb to paste anywhere, from the share format the administrator chose (Admin > Profiles > Share format). */
+function shareText(r) {
+  return renderShare(state.quiz.share_template || DEFAULT_SHARE_TEMPLATE, shareValues(r, { link: pageUrl(), title: state.quiz.title }));
+}
+
+function shareCard(r) {
+  const text = shareText(r);
+  const copy = async () => toast((await copyText(text)) ? "Copied. Paste it anywhere to share your result." : "Copy failed: select the text and copy it by hand.", "ok");
+  return h("div", { class: "card share" },
+    h("h3", {}, "Share your result"),
+    h("textarea", { id: "share-text", readonly: true, rows: 5, "aria-label": "The text that will be copied", onfocus: (e) => e.target.select() }, text),
+    h("div", { class: "row", style: { marginTop: "10px" } },
+      h("button", { class: "btn primary", type: "button", id: "share-copy", onclick: copy }, "Copy to share"),
+      typeof navigator !== "undefined" && navigator.share
+        ? h("button", { class: "btn", type: "button", onclick: () => navigator.share({ text, url: pageUrl() }).catch(() => {}) }, "Share…")
+        : null));
 }
 
 function resultText(r) {
@@ -359,100 +504,45 @@ function drawResult() {
       h("div", { class: "chips" },
         h("span", { class: "chip" }, h("b", {}, roleLabel(p.primary_specialization.role))),
         h("span", { class: "chip", title: p.confidence.note }, h("b", {}, p.confidence.label), h("i", {}, "heuristic")),
+        p.confidence.probability != null
+          ? h("span", { class: "chip", title: "The probability the Oracle's model gives this specialization, given your answers. The model is an assumption about how people answer; see the maths PDF." },
+            h("b", {}, `${Math.round(p.confidence.probability * 100)}% sure`), h("i", {}, "model"))
+          : null,
         p.dominant_traits.map((t) => h("span", { class: "chip" }, h("b", {}, t.name))),
         lengthChip(r)),
     ),
     h("div", { class: "card prose" }, h("h3", {}, "Your temperament"), h("p", {}, p.personality_interpretation)),
-    overviewCard(p),
+    overviewCard({ className: p.primary_class.name, classOverview: p.class_overview, specName: p.primary_specialization.name, specOverview: p.specialization_overview, url: p.overview_url }),
     h("div", { class: "card prose" }, h("h3", {}, `Why ${p.primary_specialization.name}`), h("p", {}, p.specialization_interpretation)),
     guideCard(p.primary_specialization),
     buildCard(p.build, p.primary_specialization, p.primary_class.id),
     h("div", { class: "grid two", style: { marginTop: "20px" } },
       h("div", { class: "card" },
         h("h3", {}, "Also in the stars"),
-        h("p", { class: "alt-line" }, classIcon(alt.alternative_class.id, 36, alt.alternative_class.name), specIcon(alt.alternative_class.id, alt.alternative_specialization.id, 36),
-          h("span", {}, h("b", {}, alt.alternative_class.name), ` – ${alt.alternative_specialization.name}`)),
-        h("p", { class: "muted" }, alt.alternative_specialization.description),
-        h("hr", { style: { border: 0, borderTop: "1px solid var(--border)", margin: "14px 0" } }),
-        h("p", { class: "alt-line" }, specIcon(p.primary_class.id, alt.second_specialization_in_primary_class.id, 36),
-          h("span", {}, "Within ", h("b", {}, p.primary_class.name), ", your next-closest path is ", h("b", {}, alt.second_specialization_in_primary_class.name), ".")),
-        h("p", { class: "muted" }, alt.second_specialization_in_primary_class.description)),
+        h("a", { class: "alt-link", href: `#/specs/${alt.alternative_class.id}/${alt.alternative_specialization.id}` },
+          h("span", { class: "alt-line" }, classIcon(alt.alternative_class.id, 36, alt.alternative_class.name), specIcon(alt.alternative_class.id, alt.alternative_specialization.id, 36),
+            h("span", {}, h("b", {}, alt.alternative_class.name), ` – ${alt.alternative_specialization.name}`)),
+          h("span", { class: "muted" }, alt.alternative_specialization.description),
+          h("span", { class: "alt-go" }, "See this specialization →")),
+        h("a", { class: "alt-link", href: `#/specs/${p.primary_class.id}/${alt.second_specialization_in_primary_class.id}` },
+          h("span", { class: "alt-line" }, specIcon(p.primary_class.id, alt.second_specialization_in_primary_class.id, 36),
+            h("span", {}, "Within ", h("b", {}, p.primary_class.name), ", your next-closest path is ", h("b", {}, alt.second_specialization_in_primary_class.name), ".")),
+          h("span", { class: "muted" }, alt.second_specialization_in_primary_class.description),
+          h("span", { class: "alt-go" }, "See this specialization →")),
+        h("a", { class: "browse-link", href: "#/specs" }, "Browse every specialization →")),
       h("div", { class: "card" },
         h("h3", {}, "The numbers"),
         h("p", { class: "muted", style: { fontSize: "0.88rem" } }, "Relative compatibility, not probabilities. A longer bar to the right means a closer fit than the average answer pattern."),
         barChart(r.rankings.classes.map((c) => ({ id: c.id, label: c.name, value: c.score, icon: classIcon(c.id, 18, c.name) })), { leadId: p.primary_class.id }),
         chartLegend()),
     ),
+    shareCard(r),
     h("div", { class: "row", style: { marginTop: "24px", justifyContent: "center" } },
-      h("button", { class: "btn", type: "button", onclick: async () => toast((await copyText(resultText(r))) ? "Result copied to the clipboard." : "Copy failed - select the text manually.", "ok") }, "Copy result"),
+      h("button", { class: "btn", type: "button", onclick: async () => toast((await copyText(resultText(r))) ? "Full result copied to the clipboard." : "Copy failed - select the text manually.", "ok") }, "Copy full details"),
       h("button", { class: "btn", type: "button", onclick: () => download("oracle-result.json", JSON.stringify(r, null, 2)) }, "Download JSON"),
       refineButton(),
       h("button", { class: "btn", type: "button", onclick: () => { state.started = true; state.result = null; state.index = 0; draw(); } }, "Revise my answers"),
       h("button", { class: "btn primary", type: "button", id: "restart", onclick: restart }, "Restart"),
       STATIC ? null : h("a", { class: "btn ghost", href: "#/admin/inspector" }, "Inspect in admin")),
   );
-}
-
-/** "What the class does": the class paragraph, then the specialization's, with a link back to Blizzard's class page. */
-function overviewCard(p) {
-  if (!p.class_overview && !p.specialization_overview) return null;
-  return h("div", { class: "card prose" },
-    h("h3", {}, `What the ${p.primary_class.name} does`),
-    p.class_overview ? h("p", {}, p.class_overview) : null,
-    p.specialization_overview ? h("p", {}, h("b", {}, `${p.primary_specialization.name}. `), p.specialization_overview) : null,
-    safeUrl(p.overview_url)
-      ? h("p", { class: "muted", style: { fontSize: "0.85rem" } }, "In our own words, from Blizzard's published class description. ",
-          h("a", { href: safeUrl(p.overview_url), target: "_blank", rel: "noopener noreferrer" }, `Read Blizzard's ${p.primary_class.name} page`))
-      : null);
-}
-
-function safeUrl(u) { return /^https?:\/\//i.test(u || "") ? u : null; }
-
-/** Roles in dungeons and raids, gear to look for, and who competes for it. */
-function guideCard(spec) {
-  const g = spec.guide;
-  if (!g) return null;
-  const list = (items) => (items && items.length ? h("ul", {}, items.map((x) => h("li", {}, x))) : null);
-  return h("div", { class: "card guide" },
-    h("h3", {}, `Your role and gear as a ${spec.name} ${spec.class_name}`),
-    h("div", { class: "grid two roles" },
-      g.dungeon_role ? h("div", {}, h("h4", {}, "In dungeons"), h("p", {}, g.dungeon_role)) : null,
-      g.raid_role ? h("div", {}, h("h4", {}, "In raids"), h("p", {}, g.raid_role)) : null),
-    g.gear && g.gear.length ? h("div", {}, h("h4", {}, "Gear to look out for"), list(g.gear)) : null,
-    g.competes_with && g.competes_with.length ? h("div", {}, h("h4", {}, "Who competes with you for gear"), list(g.competes_with)) : null,
-    g.note ? h("p", { class: "muted guide-note" }, g.note) : null);
-}
-
-function buildCard(build, spec, classId) {
-  if (!build) {
-    return h("div", { class: "card" }, h("h3", {}, "Your build"), h("p", { class: "muted" }, `No build has been configured for ${spec.name} yet.`));
-  }
-  const kind = { verified: "ok", draft: "warn", unverified: "warn", pending: "info" }[build.status] || "";
-  const label = { verified: "Verified", draft: "Draft - not verified", unverified: "Unverified", pending: "Allocation pending" }[build.status] || build.status;
-  const names = Object.fromEntries(build.talents.map((t) => [t.talent_id, t.name || t.talent_id]));
-  const hasAlloc = build.talents.length > 0;
-  const trees = hasAlloc ? talentTrees(build, classId, spec.id) : null;
-  const verified = build.status === "verified";
-  const sourceLine = h("p", { class: "muted", style: { fontSize: "0.85rem", marginTop: "12px" } },
-    `Source: ${build.source}`, build.client_version ? ` · talent data ${build.client_version}` : "", build.verified_at ? ` · verified ${build.verified_at}` : "",
-    safeUrl(build.source_url) ? [" · ", h("a", { href: safeUrl(build.source_url), target: "_blank", rel: "noopener noreferrer" }, "model build page")] : null,
-    safeUrl(build.calculator_url) ? [" · ", h("a", { href: safeUrl(build.calculator_url), target: "_blank", rel: "noopener noreferrer" }, "talent calculator")] : null);
-  return h("div", { class: "card build" },
-    h("div", { class: "row between" },
-      h("h3", { style: { margin: 0 } }, "Your build"),
-      h("span", { class: "row" }, badge(label, kind), build.tree_distribution_text ? badge(`${build.tree_distribution_text} points`, "") : null)),
-    h("p", { style: { margin: "10px 0 4px" } }, h("b", {}, build.name), ` · ${purposeLabel(build.purpose)} · level ${build.level}`),
-    h("p", { class: `note${verified ? "" : " warn"}` }, build.status_note),
-    hasAlloc ? dataNotice(build) : null,
-    trees,
-    hasAlloc && !trees ? h("p", { class: "muted" }, "The talent trees for this class are not available, so only the allocation order is shown.") : null,
-    hasAlloc && build.leveling_order.length
-      ? h("details", { style: { marginTop: "14px" } }, h("summary", {}, "Order to spend points while leveling"),
-          h("ol", { class: "order", start: 10 }, build.leveling_order.map((id, k) => h("li", { value: 10 + k }, `${names[id] || id}`))))
-      : null,
-    hasAlloc && build.combat_priorities.length ? h("div", { style: { marginTop: "12px" } }, h("h4", {}, "Notes on this build"), h("ul", {}, build.combat_priorities.map((c) => h("li", {}, c)))) : null,
-    hasAlloc && build.equipment_notes.length ? h("div", { style: { marginTop: "12px" } }, h("h4", {}, "Attributes and equipment"), h("ul", {}, build.equipment_notes.map((c) => h("li", {}, c)))) : null,
-    hasAlloc && build.professions.length ? h("p", {}, h("b", {}, "Professions: "), build.professions.join(", ")) : null,
-    hasAlloc && !verified && build.notes ? h("div", { style: { marginTop: "12px" } }, h("h4", {}, "How this was put together"), h("p", { style: { fontSize: "0.92rem" } }, build.notes)) : null,
-    hasAlloc ? sourceLine : null);
 }

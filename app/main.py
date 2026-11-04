@@ -17,6 +17,8 @@ from fastapi.staticfiles import StaticFiles
 from . import builds as builds_mod
 from . import scoring
 from .models import (
+    AdaptiveRequest,
+    AdaptiveStatus,
     AnswerPatch,
     AnswerResponse,
     BatchSimulateRequest,
@@ -32,7 +34,6 @@ from .models import (
     CatalogSummaryTree,
     CatalogUpdate,
     ClassesResponse,
-    ClassListing,
     ClassPatch,
     ClassResponse,
     Config,
@@ -48,19 +49,24 @@ from .models import (
     PublicQuiz,
     QuestionPatch,
     QuestionResponse,
+    QuizPatch,
+    QuizResponse,
     ResetRequest,
     RestoreRequest,
     ScoringPatch,
     ScoringResponse,
     SimulateRequest,
     SimulationResponse,
-    SpecListing,
+    SpecPage,
+    VersionInfo,
     SpecPatch,
     SpecResponse,
     TraitPatch,
     TraitResponse,
 )
-from .public import public_quiz, with_builds
+from . import adaptive
+from . import version as _version
+from .public import public_classes, public_quiz, spec_page, with_builds
 from .repository import (
     ConfigInvalid,
     NotFoundError,
@@ -69,7 +75,7 @@ from .repository import (
 )
 from .seed import build_default_config
 
-APP_VERSION = "1.0.0"
+APP_VERSION = _version.APP_VERSION
 STATIC_DIR = Path(__file__).parent / "static"
 DEFAULT_DB = Path(__file__).resolve().parent.parent / "data" / "oracle.db"
 
@@ -106,6 +112,7 @@ def create_app(db_path: Optional[os.PathLike | str] = None, admin_token: Optiona
     )
     app.state.repo = repo
     app.state.admin_token = token or None
+    app.state.build_info = _version.build_info()      # fixed when the server starts
 
     # ------------------------------------------------------------------ errors
     @app.exception_handler(NotFoundError)
@@ -191,6 +198,10 @@ def create_app(db_path: Optional[os.PathLike | str] = None, admin_token: Optiona
             admin_auth_required=bool(app.state.admin_token),
         )
 
+    @api.get("/version", response_model=VersionInfo, tags=["system"], summary="Version, build number and date of this application")
+    def get_version():
+        return app.state.build_info
+
     @api.get("/quiz", response_model=PublicQuiz, tags=["quiz"], summary="Participant questions (no scoring data)")
     def get_quiz(repo: Repository = Depends(get_repo)):
         return public_quiz(repo.get_config())
@@ -207,29 +218,27 @@ def create_app(db_path: Optional[os.PathLike | str] = None, admin_token: Optiona
     ):
         if include_scores:
             check_admin(request)
-        cfg = repo.get_config()
-        return ClassesResponse(
-            classes=[
-                ClassListing(
-                    id=c.id,
-                    name=c.name,
-                    description=c.description,
-                    specializations=[
-                        SpecListing(
-                            id=s.id,
-                            name=s.name,
-                            role=s.role,
-                            description=s.description,
-                            trait_multipliers=dict(s.trait_multipliers) if include_scores else None,
-                            builds=[builds_mod.summarize_build(b) for b in builds_mod.builds_for(cfg, c.id, s.id)]
-                            if include_builds else None,
-                        )
-                        for s in c.specializations
-                    ],
-                )
-                for c in cfg.classes
-            ]
-        )
+        return public_classes(repo.get_config(), include_scores, include_builds)
+
+    @api.get(
+        "/specializations/{class_id}/{spec_id}", response_model=SpecPage, response_model_exclude_none=True, tags=["quiz"],
+        summary="The page of one specialization: overview, defining traits, role and gear guide, and build",
+    )
+    def get_specialization(class_id: str, spec_id: str, repo: Repository = Depends(get_repo)):
+        page = spec_page(repo.get_config(), class_id, spec_id)
+        if page is None:
+            raise NotFoundError("specialization", f"{class_id}/{spec_id}")
+        return page
+
+    @api.post(
+        "/adaptive/next", response_model=AdaptiveStatus, response_model_exclude_none=True, tags=["quiz"],
+        summary="Confidence mode: how sure the Oracle is after these answers, and which question to ask next",
+    )
+    def adaptive_next(req: AdaptiveRequest, repo: Repository = Depends(get_repo)):
+        c = scoring.compile_config(repo.get_config())
+        if not c.adaptive.enabled:
+            raise _err(400, "adaptive_disabled", "Confidence mode is switched off in this configuration.")
+        return adaptive.status(c, req.answers)
 
     @api.post(
         "/evaluate", response_model=EvaluationResponse, response_model_exclude_none=True, tags=["quiz"],
@@ -345,6 +354,12 @@ def create_app(db_path: Optional[os.PathLike | str] = None, admin_token: Optiona
     def patch_trait(trait_id: str, patch: TraitPatch, repo: Repository = Depends(get_repo)):
         done = repo.update_trait(trait_id, patch)
         return TraitResponse(revision=done.config.revision, trait=done.config.get_trait(trait_id))
+
+    @api.patch("/quiz", response_model=QuizResponse, tags=["editing"], dependencies=admin,
+               summary="Edit the quiz title, subtitle or the text participants copy to share a result")
+    def patch_quiz(patch: QuizPatch, repo: Repository = Depends(get_repo)):
+        done = repo.update_quiz(patch)
+        return QuizResponse(revision=done.config.revision, quiz=done.config.quiz)
 
     @api.patch("/scoring", response_model=ScoringResponse, tags=["editing"], dependencies=admin,
                summary="Update confidence margins or the class tie-break order")

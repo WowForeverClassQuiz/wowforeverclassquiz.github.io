@@ -127,6 +127,7 @@ export function prepare(data) {
     strong_margin: e.strong_margin,
     moderate_margin: e.moderate_margin,
     spec_multiplier: e.spec_multiplier,
+    adaptive: e.adaptive,
     traits: e.traits,
     classes: e.classes,
     active_specs: e.active_specs,
@@ -168,16 +169,28 @@ function order(n, score, tie) {
 
 /** Score a complete set of answers (question id -> answer id). Mirrors scoring.evaluate(include_explanation=False). */
 export function evaluate(c, answers, { allowPartial = false, length = "long" } = {}) {
-  const rank = LENGTHS.indexOf(length);
-  if (rank < 0) throw new ScoringError("scoring_error", `Unknown quiz length '${length}'.`);
-  const active = c.questions.map((q, i) => i).filter((i) => c.questions[i].length_rank <= rank);
-  if (!active.length) throw new ScoringError("scoring_error", `The ${length} quiz has no questions.`);
-  const picks = resolveAnswers(c, answers, active, length);
+  let active, picks, missing;
   const given = answers || {};
-  const missing = active.map((i) => c.questions[i].id).filter((id) => !Object.prototype.hasOwnProperty.call(given, id));
-  if (!picks.length || (missing.length && !allowPartial)) {
-    throw new ScoringError("incomplete_assessment",
-      missing.length ? `${missing.length} question(s) unanswered: ${missing.join(", ")}` : "At least one answer is required.", { missing });
+  if (length === "adaptive") {
+    // confidence mode: the quiz is exactly the questions that were answered
+    active = Object.keys(given).filter((q) => c.qIndex.has(q)).map((q) => c.qIndex.get(q)).sort((a, b) => a - b);
+    picks = resolveAnswers(c, answers, active, length);
+    missing = [];
+    if (!picks.length) throw new ScoringError("incomplete_assessment", "At least one answer is required.", { missing });
+    if (picks.length < c.adaptive.min_questions && !allowPartial) {
+      throw new ScoringError("scoring_error", `Confidence mode needs at least ${c.adaptive.min_questions} answers; got ${picks.length}.`);
+    }
+  } else {
+    const rank = LENGTHS.indexOf(length);
+    if (rank < 0) throw new ScoringError("scoring_error", `Unknown quiz length '${length}'.`);
+    active = c.questions.map((q, i) => i).filter((i) => c.questions[i].length_rank <= rank);
+    if (!active.length) throw new ScoringError("scoring_error", `The ${length} quiz has no questions.`);
+    picks = resolveAnswers(c, answers, active, length);
+    missing = active.map((i) => c.questions[i].id).filter((id) => !Object.prototype.hasOwnProperty.call(given, id));
+    if (!picks.length || (missing.length && !allowPartial)) {
+      throw new ScoringError("incomplete_assessment",
+        missing.length ? `${missing.length} question(s) unanswered: ${missing.join(", ")}` : "At least one answer is required.", { missing });
+    }
   }
   const nc = c.classes.length, nt = c.traits.length;
   if (nc < 2) throw new ScoringError("scoring_error", "At least two classes are required.");
@@ -295,6 +308,7 @@ export function evaluate(c, answers, { allowPartial = false, length = "long" } =
     specialization_interpretation: specReading.trim(),
     confidence: {
       label,
+      probability: o(adaptiveModel(c).posterior(picks)[pSpec.gidx]),
       class_gap: o(gap),
       strong_margin: strongMargin,
       moderate_margin: moderateMargin,
@@ -332,4 +346,112 @@ export function evaluate(c, answers, { allowPartial = false, length = "long" } =
         + "Confidence labels are heuristics, not statistical estimates.",
     },
   };
+}
+
+
+// ---------------------------------------------------------------------------------------------------------------
+// Confidence mode: the logit choice model and the choice of the next question (a port of app/adaptive.py)
+// ---------------------------------------------------------------------------------------------------------------
+
+/** Log-likelihood tables of the choice model: logp[question][response][type] = log P(response | type, question). */
+export function adaptiveModel(c) {
+  if (c.__model) return c.__model;
+  const s = c.adaptive;
+  const nTypes = c.classes.reduce((n, cl) => n + cl.specs.length, 0);
+  const typeClass = new Array(nTypes).fill(0);
+  const terms = new Array(nTypes).fill([]);
+  c.classes.forEach((cl, ci) => cl.specs.forEach((sp) => { typeClass[sp.gidx] = ci; terms[sp.gidx] = sp.terms; }));
+  const logp = c.questions.map((q) => {
+    const rows = q.class_delta.map((_, r) => {
+      const u = [];
+      for (let g = 0; g < nTypes; g++) {
+        const specPart = fsum(terms[g].map(([t, m]) => m * q.trait_delta[r][t])) + c.spec_multiplier * q.spec_delta[r][g];
+        u.push(s.sharpness_class * q.class_delta[r][typeClass[g]] + s.sharpness_spec * specPart);
+      }
+      return u;
+    });
+    for (let g = 0; g < nTypes; g++) {
+      const top = Math.max(...rows.map((row) => row[g]));
+      const lz = top + Math.log(fsum(rows.map((row) => Math.exp(row[g] - top))));
+      rows.forEach((row) => { row[g] -= lz; });
+    }
+    return rows;
+  });
+  const entropy = (p) => -fsum(p.filter((x) => x > 0).map((x) => x * Math.log(x)));
+  const posterior = (picks) => {
+    const lp = Array.from({ length: nTypes }, (_, g) => fsum(picks.map(([qi, ri]) => logp[qi][ri][g])));
+    const top = Math.max(...lp);
+    const w = lp.map((x) => Math.exp(x - top));
+    const total = fsum(w);
+    return w.map((x) => x / total);
+  };
+  const expectedGain = (post, qi) => {
+    const h0 = entropy(post);
+    let expected = 0;
+    for (const row of logp[qi]) {
+      const joint = post.map((p, g) => p * Math.exp(row[g]));
+      const pr = fsum(joint);
+      if (pr > 0) expected += pr * entropy(joint.map((x) => x / pr));
+    }
+    return h0 - expected;
+  };
+  const bestQuestion = (post, remaining) => {
+    let best = null, bestGain = 0;
+    for (const qi of remaining) {
+      const gain = expectedGain(post, qi);
+      if (best === null || pyRound(gain, 9) > pyRound(bestGain, 9)) { best = qi; bestGain = gain; }
+    }
+    return [best, bestGain];
+  };
+  c.__model = { nTypes, typeClass, logp, entropy, posterior, expectedGain, bestQuestion };
+  return c.__model;
+}
+
+/** The specialization (global index) the scoring recommends for these picks: best class, then best specialization in it. */
+function recommendedType(c, picks) {
+  const nc = c.classes.length, nt = c.traits.length;
+  const classTotals = Array.from({ length: nc }, (_, i) => fsum(picks.map(([qi, ai]) => c.questions[qi].class_delta[ai][i])));
+  const traitTotals = Array.from({ length: nt }, (_, i) => fsum(picks.map(([qi, ai]) => c.questions[qi].trait_delta[ai][i])));
+  const nSpecs = c.classes.reduce((n, cl) => n + cl.specs.length, 0);
+  const specTotals = new Array(nSpecs).fill(0);
+  for (const g of c.active_specs) specTotals[g] = fsum(picks.map(([qi, ai]) => c.questions[qi].spec_delta[ai][g]));
+  const ci = order(nc, (i) => classTotals[i], (i) => c.classes[i].tie_rank)[0];
+  const scores = c.classes[ci].specs.map((s) => fsum(s.terms.map(([t, m]) => m * traitTotals[t])) + c.spec_multiplier * specTotals[s.gidx]);
+  return c.classes[ci].specs[order(scores.length, (j) => scores[j], () => 0)[0]].gidx;
+}
+
+function typeProbability(c, g, p) {
+  for (const cl of c.classes) for (const sp of cl.specs) {
+    if (sp.gidx === g) return { class_id: cl.id, class_name: cl.name, specialization_id: sp.id, specialization_name: sp.name, probability: p };
+  }
+  throw new Error(`no type ${g}`);
+}
+
+/** How a confidence-mode quiz stands after these answers (question id -> response id): the same document as POST /adaptive/next. */
+export function adaptiveStatus(c, answers) {
+  const s = c.adaptive, model = adaptiveModel(c);
+  const picks = resolveAnswers(c, answers, c.questions.map((q, i) => i), "long");
+  const n = picks.length;
+  const post = model.posterior(picks);
+  let rec;
+  if (n) rec = recommendedType(c, picks);
+  else { rec = 0; post.forEach((p, g) => { if (pyRound(p, 9) > pyRound(post[rec], 9)) rec = g; }); }
+  const ranked = post.map((p, g) => g).sort((a, b) => (pyRound(post[b], 9) - pyRound(post[a], 9)) || (a - b));
+  const answered = new Set(picks.map(([qi]) => qi));
+  const remaining = c.questions.map((q, i) => i).filter((i) => !answered.has(i));
+  const limit = Math.min(s.max_questions, c.questions.length);
+  const confidence = post[rec];
+  let done, reason = null;
+  if (n >= s.min_questions && confidence >= s.confidence) { done = true; reason = "confident"; }
+  else if (n >= limit || !remaining.length) { done = true; reason = "limit"; }
+  else done = false;
+  const [nxt, gain] = done ? [null, null] : model.bestQuestion(post, remaining);
+  const out = {
+    answered: n, min_questions: s.min_questions, max_questions: limit, threshold: s.confidence, confidence,
+    recommended: typeProbability(c, rec, confidence), top: ranked.slice(0, 5).map((g) => typeProbability(c, g, post[g])),
+    entropy: model.entropy(post), done, can_reveal: n >= s.min_questions,
+  };
+  if (reason) out.reason = reason;
+  if (nxt !== null) { out.next_question_id = c.questions[nxt].id; out.expected_gain = gain; }
+  return out;
 }

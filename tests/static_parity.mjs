@@ -15,6 +15,13 @@ if (job.numbers) {
   out.numbers = job.numbers.map((x) => [engine.pyRound(x, 9), engine.pyRound(x, 10), engine.signed(x), engine.formatG(x)]);
 }
 if (job.sums) out.sums = job.sums.map((xs) => engine.fsum(xs));
+if (job.paths) {
+  // job.paths = [{ data, answers: [{ ... }, ...] }]: the confidence-mode status after each answer set
+  out.paths = job.paths.map(({ data, answers }) => {
+    const compiled = engine.prepare(data);
+    return answers.map((a) => engine.adaptiveStatus(compiled, a));
+  });
+}
 if (job.cases) {
   out.cases = job.cases.map(({ data, answers, length }) => {
     const compiled = engine.prepare(data);

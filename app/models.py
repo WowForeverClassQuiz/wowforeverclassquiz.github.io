@@ -302,10 +302,29 @@ class Question(Strict):
     answers: list[Answer]
 
 
+#: Placeholders a share template may use, in the order the admin interface lists them. Keep in step with SHARE_FIELDS in static/share.js.
+SHARE_FIELDS = (
+    "class", "spec", "spec_score", "class_scores", "traits", "confidence", "questions", "quiz_length", "also_class", "also_spec",
+    "next_spec", "title", "link",
+)
+
+#: The blurb a participant copies to share a result, until an administrator changes it. Keep in step with static/share.js.
+DEFAULT_SHARE_TEMPLATE = (
+    "The stars say I'm a {class} – {spec}! ✦\n"
+    "Class scores: {class_scores} ({confidence}, {questions} questions; relative scores, not percentages).\n"
+    "Also in the stars: {also_class} – {also_spec}; closest in {class}: {next_spec}.\n"
+    "Find yours on the Forever Character Oracle: {link}"
+)
+
+
 class QuizMeta(Strict):
     id: Slug = "wow-forever-oracle"
     title: ShortText = "The Stars Have Chosen"
     subtitle: Annotated[str, Field(max_length=300)] = ""
+    share_template: Annotated[str, Field(min_length=1, max_length=1000)] = Field(
+        default=DEFAULT_SHARE_TEMPLATE,
+        description="The text a participant copies to share a result. {placeholders} (see SHARE_FIELDS) are filled in.",
+    )
     expected_question_count: int = Field(default=16, ge=1)
     answers_per_question: int = Field(default=4, ge=2)
 
@@ -313,6 +332,22 @@ class QuizMeta(Strict):
 class ConfidenceMargins(Strict):
     strong: Weight = 3.0
     moderate: Weight = 1.25
+
+
+class AdaptiveSettings(Strict):
+    """Confidence mode: ask the most informative questions until the Oracle is sure of one specialization.
+
+    The model behind the confidence figure is a logit choice model of how a person of each class/specialization type would answer;
+    see docs/oracle-math.pdf. ``sharpness_*`` say how strongly an answer reveals the type (higher = people answer more consistently
+    with their type, so fewer questions are needed and the confidence is more easily reached).
+    """
+
+    enabled: bool = True
+    min_questions: int = Field(default=10, ge=1, description="Never reveal before this many questions have been answered.")
+    max_questions: int = Field(default=30, ge=1, description="Reveal after this many questions even if the Oracle is not sure.")
+    confidence: float = Field(default=0.90, gt=0, lt=1, description="Stop once the recommended specialization has this probability.")
+    sharpness_class: float = Field(default=1.0, gt=0, le=10, description="How strongly a class's weights steer an answer (lambda_c).")
+    sharpness_spec: float = Field(default=0.35, gt=0, le=10, description="How strongly a specialization's profile steers an answer (lambda_s).")
 
 
 class ScoringSettings(Strict):
@@ -324,6 +359,7 @@ class ScoringSettings(Strict):
         description="Scales the direct specialization weights before they are added to P_s. The seed uses 3.0: "
                     "at 1.0 two specializations cannot be reached by any answers.",
     )
+    adaptive: AdaptiveSettings = Field(default_factory=AdaptiveSettings)
     tie_break_notes: LongText = (
         "Equal class scores are resolved by class_tie_break_order; equal specialization "
         "scores by the specialization order within the class; equal trait scores by trait order. "
@@ -391,7 +427,12 @@ class PublicLength(BaseModel):
     description: str
     question_count: int
     minutes: int = Field(description="A rough time to finish, assuming about twenty seconds a question.")
-    question_ids: list[str] = Field(description="The questions of this length, in quiz order.")
+    question_ids: list[str] = Field(description="The questions of this length, in quiz order (for confidence mode: the pool it chooses from).")
+    adaptive: bool = Field(default=False, description="True for confidence mode, whose questions are chosen one at a time.")
+    minutes_max: Optional[int] = None
+    min_questions: Optional[int] = None
+    max_questions: Optional[int] = None
+    confidence: Optional[float] = None
 
 
 class PublicQuiz(BaseModel):
@@ -402,6 +443,7 @@ class PublicQuiz(BaseModel):
     questions: list[PublicQuestion] = Field(description="Every question; a length lists which of them it asks.")
     lengths: list[PublicLength] = Field(default_factory=list, description="The quiz lengths on offer, shortest first.")
     default_length: str = "long"
+    share_template: str = DEFAULT_SHARE_TEMPLATE
 
 
 # --------------------------------------------------------------------------
@@ -422,11 +464,88 @@ class ClassListing(BaseModel):
     id: str
     name: str
     description: str
+    overview: str = ""
+    overview_url: str = ""
     specializations: list[SpecListing]
 
 
 class ClassesResponse(BaseModel):
     classes: list[ClassListing]
+
+
+class VersionInfo(BaseModel):
+    version: str
+    build: str
+    commit: str
+    date: str
+    developer: str
+    developer_url: str
+
+
+class SpecTraitInfo(BaseModel):
+    """One trait of a specialization's profile: what defines it, in order of weight."""
+
+    id: str
+    name: str
+    description: str = ""
+    interpretation: str = ""
+    multiplier: float
+    order: int = Field(description="1 for the primary trait, 2 for the secondary, and so on.")
+
+
+class SpecPage(BaseModel):
+    """Everything the page of one specialization shows: its class, overview, defining traits, role and gear guide, and build."""
+
+    class_id: str
+    class_name: str
+    class_description: str = ""
+    class_overview: str = ""
+    overview_url: str = ""
+    id: str
+    name: str
+    role: str
+    description: str = ""
+    overview: str = ""
+    guide: Optional[SpecGuide] = None
+    traits: list[SpecTraitInfo] = Field(default_factory=list)
+    build: Optional[BuildDetail] = None
+
+
+# --------------------------------------------------------------------------
+# Confidence mode
+# --------------------------------------------------------------------------
+
+
+class AdaptiveRequest(Strict):
+    answers: dict[str, str] = Field(description="question id -> response id, for the questions answered so far")
+
+
+class TypeProbability(BaseModel):
+    class_id: str
+    class_name: str
+    specialization_id: str
+    specialization_name: str
+    probability: float
+
+
+class AdaptiveStatus(BaseModel):
+    """Where a confidence-mode quiz stands: how sure the Oracle is, whether to stop, and which question to ask next."""
+
+    answered: int
+    min_questions: int
+    max_questions: int
+    threshold: float
+    confidence: float = Field(description="Probability the model gives the specialization the scoring currently recommends.")
+    recommended: TypeProbability
+    top: list[TypeProbability] = Field(description="The five most probable class/specialization pairs.")
+    entropy: float = Field(description="Uncertainty about the type in nats (ln 27 = 3.30 before any answer).")
+    done: bool
+    reason: Optional[Literal["confident", "limit"]] = Field(
+        default=None, description="'confident': the threshold was reached; 'limit': the question limit (or the pool) ran out."
+    )
+    can_reveal: bool = Field(description="True once the minimum number of questions has been answered.")
+    next_question_id: Optional[str] = None
+    expected_gain: Optional[float] = Field(default=None, description="Expected reduction of the uncertainty (nats) from the next question.")
 
 
 # --------------------------------------------------------------------------
@@ -436,7 +555,10 @@ class ClassesResponse(BaseModel):
 
 class EvaluateRequest(Strict):
     answers: dict[str, str] = Field(description="question id -> answer id")
-    length: QuizLength = Field(default="long", description="Which quiz length these answers belong to; only its questions are scored.")
+    length: Literal["short", "medium", "long", "adaptive"] = Field(
+        default="long",
+        description="Which quiz length these answers belong to; only its questions are scored. 'adaptive' scores exactly the questions answered.",
+    )
     include_explanation: bool = False
     include_counterfactuals: bool = False
     allow_partial: bool = Field(
@@ -546,6 +668,9 @@ class Explanation(BaseModel):
 
 class Confidence(BaseModel):
     label: str
+    probability: Optional[float] = Field(
+        default=None, description="Probability the model gives the recommended specialization given the answers (confidence model)."
+    )
     class_gap: float
     strong_margin: float
     moderate_margin: float
@@ -781,6 +906,18 @@ class QuestionPatch(Strict):
     min_length: Optional[QuizLength] = None
 
 
+class QuizPatch(Strict):
+    expected_revision: int
+    title: Optional[ShortText] = None
+    subtitle: Optional[Annotated[str, Field(max_length=300)]] = None
+    share_template: Optional[Annotated[str, Field(min_length=1, max_length=1000)]] = None
+
+
+class QuizResponse(BaseModel):
+    revision: int
+    quiz: QuizMeta
+
+
 class SpecPatch(Strict):
     expected_revision: int
     name: Optional[ShortText] = None
@@ -809,6 +946,7 @@ class TraitPatch(Strict):
 
 class ScoringPatch(Strict):
     expected_revision: int
+    adaptive: Optional[AdaptiveSettings] = None
     confidence_margins: Optional[ConfidenceMargins] = None
     spec_weight_multiplier: Optional[Weight] = None
     class_tie_break_order: Optional[list[Slug]] = None

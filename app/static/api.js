@@ -36,6 +36,22 @@ function loadStatic() {
 async function staticApi(path, method, body) {
   const { engine, data, compiled } = await loadStatic();
   if (method === "GET" && path === "/quiz") return data.quiz;
+  if (method === "GET" && path === "/classes") return data.classes;
+  if (method === "GET" && path === "/version") return data.build;
+  const spec = method === "GET" && /^\/specializations\/([^/]+)\/([^/]+)$/.exec(path);
+  if (spec) {
+    const key = `${spec[1]}/${spec[2]}`, page = data.specs[key];
+    if (!page) throw new ApiError(404, { code: "not_found", message: `Unknown specialization '${key}'.` });
+    return data.builds[key] ? { ...page, build: data.builds[key] } : page;
+  }
+  if (method === "POST" && path === "/adaptive/next") {
+    try {
+      return engine.adaptiveStatus(compiled, body.answers || {});
+    } catch (err) {
+      if (err instanceof engine.ScoringError) throw new ApiError(422, { code: err.code, message: err.message });
+      throw err;
+    }
+  }
   if (method === "POST" && path === "/evaluate") {
     try {
       return engine.evaluate(compiled, body.answers, { length: body.length || "long" });
