@@ -37,6 +37,14 @@ def model(c):
 
 
 @pytest.fixture(scope="module")
+def plain(cfg):
+    """The same configuration with the tiebreaker decision switched off: the threshold alone then ends a reading."""
+    off = cfg.model_copy(deep=True)
+    off.scoring.adaptive = off.scoring.adaptive.model_copy(update={"tiebreak_min_questions": 0})
+    return compile_config(off)
+
+
+@pytest.fixture(scope="module")
 def feral(c, model):
     """A deterministic respondent of type Druid / Feral Combat: the most likely response to every one of the fifty questions."""
     tau = next(sp.gidx for cl in c.classes if cl.id == "druid" for sp in cl.specs if sp.id == "feral_combat")
@@ -151,15 +159,15 @@ def test_the_status_before_any_answer_asks_the_most_informative_question(c):
     assert math.isclose(st.spec_probability, 1 / 27) and st.confidence == 0.0 and st.question_factor == 0.0 and st.threshold == 0.9 and (st.min_questions, st.max_questions) == (1, 30)
 
 
-def test_a_clear_respondent_is_told_to_stop_as_soon_as_the_oracle_is_sure(c, feral):
+def test_a_clear_respondent_is_told_to_stop_as_soon_as_the_oracle_is_sure(plain, feral):
     answers = {}
     for k in range(40):
-        st = adaptive.status(c, answers)
+        st = adaptive.status(plain, answers)
         if st.done:
             break
         answers[st.next_question_id] = feral[st.next_question_id]
     assert st.done and st.reason == "confident" and st.confidence >= 0.9 and len(answers) < 15
-    assert not any(adaptive.status(c, dict(list(answers.items())[:k])).done for k in range(0, len(answers)))      # not one answer sooner
+    assert not any(adaptive.status(plain, dict(list(answers.items())[:k])).done for k in range(0, len(answers)))      # not one answer sooner
     assert st.recommended.class_id == "druid" and st.recommended.specialization_id == "feral_combat"
 
 
@@ -175,6 +183,8 @@ def test_an_inconsistent_respondent_runs_to_the_limit(c, model):
     assert st.done and len(answers) <= 30
     if st.reason == "confident":
         assert st.confidence >= 0.9
+    elif st.reason == "decided":
+        assert st.confidence >= 0.8 and len(answers) >= 10                # a tiebreaker settled it, within a tenth of the threshold
     else:
         assert st.reason == "limit" and len(answers) == 30
 
@@ -254,7 +264,7 @@ def test_the_adaptive_endpoint(client, feral):
         if st["done"]:
             break
         answers[st["next_question_id"]] = feral[st["next_question_id"]]
-    assert st["done"] and st["reason"] == "confident" and st["confidence"] >= 0.9 and "next_question_id" not in st
+    assert st["done"] and st["reason"] in ("confident", "decided") and st["confidence"] >= 0.8 and "next_question_id" not in st
     r = client.post(f"{API}/evaluate", json={"answers": answers, "length": "adaptive"})
     assert r.status_code == 200 and r.json()["metadata"]["quiz_length"] == "adaptive"
     assert client.post(f"{API}/evaluate", json={"answers": {}, "length": "adaptive"}).status_code == 400

@@ -27,6 +27,14 @@ def model(c):
     return adaptive.Model(c)
 
 
+@pytest.fixture(scope="module")
+def plain(cfg):
+    """The configuration with the tiebreaker decision switched off, so the scaled threshold alone ends a reading."""
+    off = cfg.model_copy(deep=True)
+    off.scoring.adaptive = off.scoring.adaptive.model_copy(update={"tiebreak_min_questions": 0})
+    return compile_config(off)
+
+
 def noisy_path(c, model, tau, seed, slip=0.5, limit=30):
     """Answer along the adaptive order as a person of type tau, slipping to a random answer a share of the time. Returns every status along the way."""
     rng = random.Random(seed)
@@ -66,7 +74,8 @@ def test_the_confidence_the_oracle_states_rises_with_every_question(c, model):
             shown = [st.confidence for st in statuses]
             assert shown[0] == 0.0
             assert all(after > before for before, after in zip(shown, shown[1:])), (tau, slip, shown)           # strictly, every question
-            assert all(s < statuses[0].threshold - adaptive.HEADROOM + 1e-12 for s, st in zip(shown, statuses) if not st.done or st.reason != "confident")
+            assert all(s < statuses[0].threshold - adaptive.HEADROOM + 1e-12 for s, st in zip(shown, statuses) if not st.done or st.reason == "limit")
+            assert all(s < statuses[0].threshold for s, st in zip(shown, statuses) if st.reason == "decided")                  # a tiebreaker's decision never claims the threshold
 
 
 def test_the_current_confidence_can_fall_but_the_stated_one_does_not(c, model):
@@ -101,9 +110,10 @@ def test_the_top_of_the_stated_scale_is_compressed_smoothly_below_the_threshold(
     assert adaptive.compress(0.95, theta) == pytest.approx(0.8 + 0.09 * 0.9296, abs=1e-3)
 
 
-def test_with_k_equal_to_one_no_consistent_reading_stops_before_about_ten_questions(c, model):
+def test_with_k_equal_to_one_no_consistent_reading_stops_before_about_ten_questions(plain):
+    model = adaptive.Model(plain)
     for tau in range(0, 27, 3):
-        statuses, answers = noisy_path(c, model, tau, seed=900 + tau, slip=0.0)
+        statuses, answers = noisy_path(plain, model, tau, seed=900 + tau, slip=0.0)
         assert statuses[-1].done and statuses[-1].reason == "confident"
         assert len(answers) >= 10, (tau, len(answers))
 
@@ -135,7 +145,11 @@ def test_a_result_states_the_current_confidence_and_the_factor_it_used(cfg, c, m
         statuses, answers = noisy_path(c, model, tau, seed=77 + tau, slip=slip)
         st = statuses[-1]
         ev = evaluate(cfg, answers, include_explanation=False, length="adaptive")
-        assert ev.result.confidence.overall == pytest.approx(st.current_confidence, abs=1e-9)
+        assert ev.result.primary_specialization.id == st.recommended.specialization_id
+        if st.reason == "decided":                 # a tiebreaker named the result; the figure is the one the meter was heading to
+            assert ev.result.confidence.overall == pytest.approx(st.confidence, abs=1e-9) and ev.result.confidence.decided_by
+        else:
+            assert ev.result.confidence.overall == pytest.approx(st.current_confidence, abs=1e-9)
         assert ev.result.confidence.question_factor == pytest.approx(st.question_factor, abs=1e-9)
         if st.reason == "confident":
             assert ev.result.confidence.overall == pytest.approx(st.confidence, abs=1e-9) and ev.result.confidence.overall >= st.threshold

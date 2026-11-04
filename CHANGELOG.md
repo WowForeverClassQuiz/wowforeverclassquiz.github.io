@@ -1,7 +1,14 @@
 # Changelog
 
 The version shown on the first page is `APP_VERSION` in [app/version.py](app/version.py). The scoring rules carry their own
-`algorithm_version` (currently 1.7.0), which changes only when the arithmetic or the seed weights do.
+`algorithm_version` (currently 1.9.0), which changes when the arithmetic, the seed weights or the rules for choosing and ending a reading do.
+
+## 1.11.0 · 2026-11-04
+
+* **A tiebreaker settles a close call.** In confidence mode, once ten questions have been asked and a tiebreaker between the frontrunners has been answered, the Oracle stops and recommends the specialization that answer chose, even when its confidence is short of 90%. The scaled confidence in that specialization must be within a tenth of the threshold (80% or more). This covers two specializations of one class and two that share a role, such as Protection Paladin and Protection Warrior, which used to hold the meter near 87% for several questions in a row. The result says that a tiebreaker settled it. A reading that is already 90% sure of the scoring's own pick is left alone. The setting is "Let a tiebreaker decide from this many questions" in Profiles & Settings (0 turns it off). In simulation it ends about one reading in eight, and it costs exact-specialization accuracy when a respondent's answers are scattered (about 3 points at 70% of the consistency the model assumes and 10 at 50%), because a single tiebreaker answer then decides. The meter's crawl for scattered respondents is not cured by it.
+* **The Oracle prefers simple questions.** It now asks the question with the most information for the effort it takes: a ranking counts as 1.5 single choices and a six-point split as 2.5 (settings "Effort of a ranking question" and "Effort of a six-point question"). In simulation the six-point splits fall from 28% of the questions asked to about 2%, and rankings from 14% to about 5%, while a reading needs about the same number of questions.
+* **A shorter share blurb.** The second line lists the class scores without the parenthesis, and the "Also in the stars" line is gone. Configurations that never changed the format pick this up; a format an administrator edited stays as it is, and "Restore the original" brings the new one back.
+* The scoring algorithm is 1.9.0, because the rules for choosing the next question and for ending a reading changed. Scores for the same answers are unchanged.
 
 ## 1.10.1 · 2026-11-04
 

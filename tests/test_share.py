@@ -37,8 +37,9 @@ def rev(client):
 def test_the_default_blurb_names_the_result_the_numbers_and_a_link():
     text = run_share('return m.renderShare(m.DEFAULT_SHARE_TEMPLATE, m.shareValues(m.SAMPLE_RESULT, { link: "https://example.test/oracle/", title: "T" }));')
     assert "Feral Combat Druid" in text and "Druid +13.39 · Hunter +3.08 · Shaman +2.97" in text
-    assert "Mage" not in text.split("Class scores:")[1].split("(")[0]                        # only the top three classes
-    assert "strong lean, 20 questions" in text and "Marksmanship Hunter" in text and "Balance" in text
+    assert "Mage" not in text.split("Class scores:")[1].split("\n")[0]                       # only the top three classes
+    assert text.splitlines()[1] == "Class scores: Druid +13.39 · Hunter +3.08 · Shaman +2.97"           # no parenthesis after the scores
+    assert "Also in the stars" not in text and "(" not in text and len(text.splitlines()) == 3
     assert text.rstrip().endswith("https://example.test/oracle/")
 
 

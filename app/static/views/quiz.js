@@ -60,7 +60,7 @@ function introCount() {
   if (lengths().length > 1) return "";
   const len = currentLength();
   return len && len.adaptive
-    ? `The Oracle asks up to ${len.max_questions} questions and stops once it is ${Math.round(len.confidence * 100)}% sure.`
+    ? `The Oracle asks up to ${len.max_questions} questions and stops once it is ${Math.round(len.confidence * 100)}% sure, or sooner when a tiebreaker question settles a close call.`
     : `${total()} questions.`;
 }
 
@@ -204,7 +204,7 @@ async function beginAdaptive() {
 /** The meter shows how sure the Oracle was when this question was put to you. It moves when you go on to the next question, never when you choose an answer. */
 function certainty(i, s) {
   const pct = s ? Math.round(s.confidence * 100) : 0;
-  const rule = s ? `The Oracle stops once it is ${Math.round(s.threshold * 100)}% sure, after at most ${s.max_questions} questions.` : "";
+  const rule = s ? `The Oracle stops once it is ${Math.round(s.threshold * 100)}% sure, after at most ${s.max_questions} questions. A tiebreaker question can settle a close call sooner.` : "";
   return h("div", { class: "certainty" },
     h("div", { class: "progress-label" }, h("span", { class: "q-count" }, `Question ${i + 1}`),
       h("span", { id: "certainty-label", class: "oracle-says", title: rule }, s ? ["The Oracle is ", h("b", {}, `${pct}%`), " sure"] : "Thinking…")),
@@ -501,6 +501,7 @@ function resultText(r) {
     `Recommended: ${p.primary_specialization.name} ${p.primary_class.name} (${roleLabel(p.primary_specialization.role)})`,
     `Reading strength: ${p.confidence.label} (a heuristic based on the class gap), from ${r.metadata.total_questions} questions`,
     p.confidence.overall != null ? `The Oracle was ${Math.round(p.confidence.overall * 100)}% sure.` : "",
+    p.confidence.decision_note || "",
     p.build ? `Build: ${p.build.name} [${p.build.status}]${p.build.tree_distribution_text ? ` ${p.build.tree_distribution_text}` : ""}` : "",
     `Also in the stars: ${a.alternative_specialization.name} ${a.alternative_class.name}; closest in ${p.primary_class.name}: ${a.second_specialization_in_primary_class.name}`,
     "",
@@ -541,7 +542,8 @@ function drawResult() {
     ),
     h("div", { class: "card prose" }, h("h3", {}, "Your temperament"), h("p", {}, p.personality_interpretation)),
     overviewCard({ className: p.primary_class.name, classOverview: p.class_overview, specName: p.primary_specialization.name, specOverview: p.specialization_overview, url: p.overview_url }),
-    h("div", { class: "card prose" }, h("h3", {}, `Why ${p.primary_specialization.name}`), h("p", {}, p.specialization_interpretation)),
+    h("div", { class: "card prose" }, h("h3", {}, `Why ${p.primary_specialization.name}`), h("p", {}, p.specialization_interpretation),
+      p.confidence.decision_note ? h("p", { class: "muted", id: "decision-note" }, p.confidence.decision_note) : null),
     guideCard(p.primary_specialization),
     buildCard(p.build, p.primary_specialization, p.primary_class.id),
     h("div", { class: "grid two", style: { marginTop: "20px" } },

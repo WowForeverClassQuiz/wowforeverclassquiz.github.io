@@ -115,7 +115,7 @@
   check("the share bar also offers the clipboard, X, Reddit and email", !!document.getElementById("share-top-copy") && ["share-x", "share-reddit", "share-email"].every((id) => (document.getElementById(id)?.getAttribute("href") || "").length > 20));
   document.getElementById("share-top-copy").click(); await sleep(500);
   check("copying from the top of the result says so", /Copied|Copy failed/.test(document.getElementById("toasts")?.innerText || ""), document.getElementById("toasts")?.innerText);
-  check("the result states the model's confidence", /\d+% sure/.test(page) && (Number(/(\d+)% sure/.exec(page)[1]) >= 90), /(\d+)% sure/.exec(page)?.[0]);
+  check("the result states the model's confidence", /\d+% sure/.test(page) && (Number(/(\d+)% sure/.exec(page)[1]) >= 80), /(\d+)% sure/.exec(page)?.[0]);
   check("the confidence reading found Feral Combat Druid, like the full quiz", document.querySelector(".result-hero h1")?.textContent === "Druid" && document.querySelector(".result-hero h2")?.textContent === "Feral Combat");
   check("a confidence reading offers no sharpening step", !document.getElementById("refine"));
   document.getElementById("restart").click(); await sleep(100);

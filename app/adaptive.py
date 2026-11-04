@@ -91,6 +91,29 @@ class Model:
         finalists = self.c.questions[qi].finalists
         return not finalists or fsum(post[g] for g in finalists) >= tiebreak_mass
 
+    def decision(self, post, picks, s: AdaptiveSettings) -> Optional[tuple[int, int]]:
+        """(specialization, question) when an answered tiebreaker settles the reading, else None.
+
+        A tiebreaker is settled when at least ``tiebreak_min_questions`` questions have been answered, its finalists together still hold
+        ``tiebreak_mass`` of the probability, and the scaled confidence in the specialization its answer names is within ``SOFT_BAND`` of the
+        threshold. Of several such answers, the named specialization the model finds most probable wins. The result does not depend on the
+        order of the answers.
+        """
+        n = len(picks)
+        if s.tiebreak_min_questions <= 0 or n < max(s.tiebreak_min_questions, s.min_questions):
+            return None
+        named = []
+        for qi, ai in picks:
+            finalists = self.c.questions[qi].finalists
+            if finalists and fsum(post[g] for g in finalists) >= s.tiebreak_mass:
+                named.append((-round(post[finalists[ai]], LN_TYPES_PRECISION), finalists[ai], qi))
+        if not named:
+            return None
+        _, g, qi = min(named)
+        floor = max(s.confidence - SOFT_BAND, 0.0)
+        reach = question_factor(n, s.question_scaling) * self.confidence_parts(post, g, s.class_credit, s.role_credit).overall
+        return (g, qi) if reach >= floor else None
+
     def confidence_parts(self, post, rec: int, class_credit: float, role_credit: float) -> ConfidenceParts:
         """How sure the model is of ``rec``: its own probability, its class's, its role's, and the combined confidence.
 
@@ -126,12 +149,19 @@ class Model:
                 expected += pr * self.entropy([x / pr for x in joint])
         return h0 - expected
 
+    def effort(self, qi: int) -> float:
+        """How much a question asks of the person, as a multiple of a single choice (rankings and six-point splits ask more)."""
+        s = self.c.adaptive
+        return {"ranking": s.effort_ranking, "allocation": s.effort_allocation}.get(self.c.questions[qi].type, 1.0)
+
     def best_question(self, post, remaining) -> tuple[Optional[int], float]:
-        best, best_gain = None, 0.0
+        """The question with the most expected information per unit of effort, and its expected information gain."""
+        best, best_score, best_gain = None, 0.0, 0.0
         for qi in remaining:
             gain = self.expected_gain(post, qi)
-            if best is None or round(gain, LN_TYPES_PRECISION) > round(best_gain, LN_TYPES_PRECISION):
-                best, best_gain = qi, gain
+            score = gain / self.effort(qi)
+            if best is None or round(score, LN_TYPES_PRECISION) > round(best_score, LN_TYPES_PRECISION):
+                best, best_score, best_gain = qi, score, gain
         return best, best_gain
 
 
@@ -207,6 +237,31 @@ def _role_of(c: Compiled, g: int) -> str:
     raise KeyError(g)
 
 
+def decided_confidence(c: Compiled, model: Model, answers: dict[str, str], post, g: int, s: AdaptiveSettings) -> float:
+    """What the Oracle states when a tiebreaker has named specialization ``g``: the meter's figure for these answers, or the current confidence if that is higher."""
+    ordered = resolve_answers(c, answers, keep_order=True)
+    overall = model.confidence_parts(post, g, s.class_credit, s.role_credit).overall
+    stated, current, _ = stated_confidence(confidence_trace(c, model, ordered[:-1], s) + [overall], s)
+    return max(stated, current)
+
+
+def settled_by_tiebreaker(c: Compiled, picks, model: Optional[Model] = None, settings: Optional[AdaptiveSettings] = None) -> Optional[tuple[int, int]]:
+    """(specialization, question) a tiebreaker has decided for these answers, or None: what ``status`` reports as ``reason == "decided"``.
+
+    The scoring's own recommendation keeps its place when the Oracle is already confident of it.
+    """
+    s = settings or c.adaptive
+    model = model or Model(c)
+    n = len(picks)
+    if not n:
+        return None
+    post = model.posterior(picks)
+    parts = model.confidence_parts(post, recommended_type(c, picks), s.class_credit, s.role_credit)
+    if n >= s.min_questions and question_factor(n, s.question_scaling) * parts.overall >= s.confidence:
+        return None
+    return model.decision(post, picks, s)
+
+
 def model_probability(c: Compiled, picks, model: Optional[Model] = None) -> float:
     """Probability the model gives the recommended specialization given these answers."""
     model = model or Model(c)
@@ -227,9 +282,18 @@ def status(c: Compiled, answers: dict[str, str], settings: Optional[AdaptiveSett
     limit = min(s.max_questions, len(c.questions))
     parts = model.confidence_parts(post, rec, s.class_credit, s.role_credit)
     ordered = resolve_answers(c, answers, keep_order=True)
-    stated, current, factor = stated_confidence(confidence_trace(c, model, ordered[:-1], s) + [parts.overall] if n else [], s)
+    earlier = confidence_trace(c, model, ordered[:-1], s) if n else []
+    stated, current, factor = stated_confidence(earlier + [parts.overall] if n else [], s)
+    decided = None if (n >= s.min_questions and current >= s.confidence) else model.decision(post, picks, s)
+    if decided:                                 # a tiebreaker answer names the specialization; the scoring's own pick gives way
+        rec = decided[0]
+        parts = model.confidence_parts(post, rec, s.class_credit, s.role_credit)
+        stated, current, factor = stated_confidence(earlier + [parts.overall], s)
+        stated = max(stated, current)
     if n >= s.min_questions and current >= s.confidence:
         done, reason = True, "confident"
+    elif decided:
+        done, reason = True, "decided"
     elif n >= limit or not remaining:
         done, reason = True, "limit"
     else:

@@ -343,7 +343,7 @@ def test_an_untouched_first_release_database_is_upgraded_to_the_new_seed(tmp_pat
     assert {"type", "low_label", "high_label", "rationale"} <= columns(db, "questions")
     cfg = repo.get_config()
     assert cfg.revision == 1 and len(cfg.questions) == 103 and cfg.quiz.expected_question_count == 30
-    assert cfg.scoring.algorithm_version == "1.8.0" and cfg.classes[0].overview
+    assert cfg.scoring.algorithm_version == "1.9.0" and cfg.classes[0].overview
     assert repo.history()[0]["change_description"].startswith("Initial seed configuration (upgraded")
     client = TestClient(create_app(db))
     assert client.post(f"{API}/evaluate", json={"answers": DRUID_ANSWERS}).status_code == 200

@@ -124,6 +124,6 @@ def test_the_oracle_uses_the_added_questions_to_settle_a_specialization(c, model
             break
         qi = c.q_index[st.next_question_id]
         answers[st.next_question_id] = c.questions[qi].answer_ids[max(range(len(c.questions[qi].answer_ids)), key=lambda r: model.logp[qi][r][tau])]
-    assert st.reason == "confident" and len(answers) <= 12
+    assert st.reason in ("confident", "decided") and len(answers) <= 12
     assert (st.recommended.class_id, st.recommended.specialization_id) == (class_id, spec_id)
     assert set(answers) & set(EXTRA_IDS)

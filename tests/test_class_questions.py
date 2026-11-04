@@ -97,7 +97,7 @@ TRIOS = [
 
 @pytest.mark.parametrize("trio", TRIOS)
 def test_the_oracle_asks_them_when_a_person_is_torn_among_three_classes(cfg, trio):
-    """A respondent whose answers blend three types (most likely response to 40% / 35% / 25% of each type's utility) needs the class questions.
+    """A respondent whose answers blend three types in equal parts (the most likely response to a third of each type's utility) needs the class questions.
 
     The tiebreakers are left out here: they would settle the finalists first, which tests/test_tiebreakers.py covers."""
     plain = cfg.model_copy(deep=True)
@@ -105,7 +105,7 @@ def test_the_oracle_asks_them_when_a_person_is_torn_among_three_classes(cfg, tri
     c = compile_config(plain)
     model = adaptive.Model(c)
     types = [next(sp.gidx for cl in c.classes if cl.id == cid for sp in cl.specs if sp.id == sid) for cid, sid in trio]
-    weights = (0.4, 0.35, 0.25)
+    weights = (1 / 3, 1 / 3, 1 / 3)
     answers, asked = {}, []
     for _ in range(len(c.questions)):
         st = adaptive.status(c, answers)

@@ -135,7 +135,7 @@ def test_config_endpoint_returns_complete_scoring_data(client):
     assert scale["type"] == "scale" and [a["id"] for a in scale["answers"]] == ["agree", "disagree"]
     assert scale["answers"][0]["spec_weights"] == {"warrior/protection": 2.0, "paladin/protection": 1.0}
     assert scale["rationale"]
-    assert cfg["scoring"]["spec_weight_multiplier"] == 5.0 and cfg["scoring"]["algorithm_version"] == "1.8.0"
+    assert cfg["scoring"]["spec_weight_multiplier"] == 5.0 and cfg["scoring"]["algorithm_version"] == "1.9.0"
     assert cfg["classes"][0]["overview"] and cfg["classes"][0]["specializations"][0]["overview"]
     assert cfg["classes"][0]["specializations"][1]["trait_multipliers"] == {"wild": 1.5, "instinct": 1.0, "freedom": 0.45}
     assert cfg["scoring"]["class_tie_break_order"][0] == "druid"
@@ -425,7 +425,7 @@ def test_history_snapshot_can_be_restored(client):
 def test_health_endpoint(client):
     body = client.get(f"{API}/health").json()
     assert body["status"] == "ok" and body["class_count"] == 9 and body["specialization_count"] == 27
-    assert body["algorithm_version"] == "1.8.0" and body["question_count"] == 103
+    assert body["algorithm_version"] == "1.9.0" and body["question_count"] == 103
 
 
 def test_openapi_documentation_is_available_and_complete(client):

@@ -35,7 +35,7 @@ from .models import (
     Trait,
 )
 
-ALGORITHM_VERSION = "1.8.0"
+ALGORITHM_VERSION = "1.9.0"
 
 # Multipliers for the primary, secondary and tertiary trait of the original three-trait profiles.
 SPEC_MULTIPLIERS = (1.5, 1.0, 0.45)

@@ -29,7 +29,7 @@ function savedForm(key) {
   const ad = cfg.scoring.adaptive;
   return {
     strong: cfg.scoring.confidence_margins.strong, moderate: cfg.scoring.confidence_margins.moderate, order: [...cfg.scoring.class_tie_break_order],
-    adaptive: { enabled: ad.enabled, min: ad.min_questions, max: ad.max_questions, confidence: Math.round(ad.confidence * 10000) / 100, lc: ad.sharpness_class, ls: ad.sharpness_spec, cc: ad.class_credit, rc: ad.role_credit, tm: ad.tiebreak_mass, qs: ad.question_scaling, ro: ad.random_opening },
+    adaptive: { enabled: ad.enabled, min: ad.min_questions, max: ad.max_questions, confidence: Math.round(ad.confidence * 10000) / 100, lc: ad.sharpness_class, ls: ad.sharpness_spec, cc: ad.class_credit, rc: ad.role_credit, tm: ad.tiebreak_mass, tn: ad.tiebreak_min_questions, qs: ad.question_scaling, er: ad.effort_ranking, ea: ad.effort_allocation, ro: ad.random_opening },
   };
 }
 const specForm = (s) => ({ description: s.description, overview: s.overview || "", rows: Object.entries(s.trait_multipliers).map(([t, m]) => [t, m]) });
@@ -125,7 +125,7 @@ function scoringCard() {
   card.append(h("h3", {}, "Scoring settings"),
     h("div", { class: "stack", style: { marginBottom: "16px" } },
       h("h4", {}, "Confidence mode (the default way to take the quiz)"),
-      h("p", { class: "muted", style: { fontSize: "0.88rem" } }, "The Oracle asks the most informative question each time and stops once its confidence reaches the threshold, or at the maximum. The confidence is the model's probability for the recommended specialization plus partial credit for probability on other specializations of the same class and with a similar role; set both credits to 0 for the specialization's probability alone. A minimum of 1 means it may stop after any answer. The sharpness values say how consistently people are assumed to answer as their type: higher means fewer questions. See docs/oracle-math.pdf."),
+      h("p", { class: "muted", style: { fontSize: "0.88rem" } }, "The Oracle asks the most informative question for the effort it takes each time, and stops once its confidence reaches the threshold, or at the maximum. Once a tiebreaker between the frontrunners has been answered, it also stops when its scaled confidence is within a tenth of the threshold, and names the specialization the answer chose. The confidence is the model's probability for the recommended specialization plus partial credit for probability on other specializations of the same class and with a similar role; set both credits to 0 for the specialization's probability alone. A minimum of 1 means it may stop after any answer. The sharpness values say how consistently people are assumed to answer as their type: higher means fewer questions. See docs/oracle-math.pdf."),
       h("label", { class: "row" }, enabled, "Offer confidence mode"),
       h("div", { class: "row", style: { flexWrap: "wrap" } },
         num("Minimum questions (1 means none)", "min", { min: "1", step: "1" }), num("Maximum questions", "max", { min: "1", step: "1" }),
@@ -133,6 +133,9 @@ function scoringCard() {
         num("Class sharpness", "lc", { min: "0.05", step: "0.05" }), num("Specialization sharpness", "ls", { min: "0.05", step: "0.05" }),
         num("Credit for the same class (0 to 1)", "cc", { min: "0", max: "1", step: "0.05" }), num("Credit for a similar role (0 to 1)", "rc", { min: "0", max: "1", step: "0.05" }),
         num("Probability the finalists must hold for a tiebreaker (0 to 1)", "tm", { min: "0.05", max: "1", step: "0.05" }),
+        num("Let a tiebreaker decide from this many questions (0 turns it off)", "tn", { min: "0", max: "30", step: "1" }),
+        num("Effort of a ranking question (1 is a single choice)", "er", { min: "1", max: "10", step: "0.25" }),
+        num("Effort of a six-point question (1 is a single choice)", "ea", { min: "1", max: "10", step: "0.25" }),
         num("Question scaling k (confidence is scaled by n / (n + k); 0 turns it off)", "qs", { min: "0", max: "10", step: "0.1" })),
       h("label", { class: "row" }, h("input", { type: "checkbox", checked: a.ro, "aria-label": "Open with a random personality question", onchange: (e) => { a.ro = e.target.checked; card.refresh(); } }), "Open with a random personality question")),
     h("div", { class: "grid two" },
@@ -142,7 +145,8 @@ function scoringCard() {
       h("div", {}, h("h4", {}, "Class tie-break order"), h("p", { class: "muted", style: { fontSize: "0.88rem" } }, "Equal class scores resolve in this order (top wins)."), list)),
     actions(key, card, () => save(key, () => patch("/scoring", { expected_revision: cfg.revision, confidence_margins: { strong: d.strong, moderate: d.moderate }, class_tie_break_order: d.order,
       adaptive: { enabled: d.adaptive.enabled, min_questions: d.adaptive.min, max_questions: d.adaptive.max, confidence: d.adaptive.confidence / 100,
-        sharpness_class: d.adaptive.lc, sharpness_spec: d.adaptive.ls, class_credit: d.adaptive.cc, role_credit: d.adaptive.rc, tiebreak_mass: d.adaptive.tm, question_scaling: d.adaptive.qs, random_opening: d.adaptive.ro } }), "Scoring settings saved")));
+        sharpness_class: d.adaptive.lc, sharpness_spec: d.adaptive.ls, class_credit: d.adaptive.cc, role_credit: d.adaptive.rc, tiebreak_mass: d.adaptive.tm, tiebreak_min_questions: d.adaptive.tn, question_scaling: d.adaptive.qs,
+        effort_ranking: d.adaptive.er, effort_allocation: d.adaptive.ea, random_opening: d.adaptive.ro } }), "Scoring settings saved")));
   return card;
 }
 

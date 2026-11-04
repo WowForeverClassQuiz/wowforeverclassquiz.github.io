@@ -329,8 +329,7 @@ SHARE_FIELDS = (
 #: The blurb a participant copies to share a result, until an administrator changes it. Keep in step with static/share.js.
 DEFAULT_SHARE_TEMPLATE = (
     "The stars say I'm a {spec} {class}! ✦\n"
-    "Class scores: {class_scores} ({confidence}, {questions} questions; relative scores).\n"
-    "Also in the stars: {also_spec} {also_class}. Closest in {class}: {next_spec}.\n"
+    "Class scores: {class_scores}\n"
     "Find yours on the Forever Character Oracle: {link}"
 )
 
@@ -382,6 +381,21 @@ class AdaptiveSettings(Strict):
             "The confidence is scaled by n / (n + question_scaling) for n questions asked, so the same certainty counts for less after three questions "
             "than after twenty. At 1 a reading needs about ten questions; 0 turns the scaling off."
         ),
+    )
+    tiebreak_min_questions: int = Field(
+        default=10, ge=0, le=30,
+        description=(
+            "From this many questions on, an answered tiebreaker between the frontrunners settles the reading: the Oracle names the specialization the answer chose, "
+            "even when its confidence is short of the threshold, provided the confidence is within a tenth of it. 0 turns this off."
+        ),
+    )
+    effort_ranking: float = Field(
+        default=1.5, ge=1, le=10,
+        description="How much more effort a ranking question asks of a person than a single choice. The Oracle picks the question with the most information per unit of effort.",
+    )
+    effort_allocation: float = Field(
+        default=2.5, ge=1, le=10,
+        description="How much more effort a six-point question asks of a person than a single choice. The Oracle picks the question with the most information per unit of effort.",
     )
     random_opening: bool = Field(
         default=True,
@@ -594,8 +608,9 @@ class AdaptiveStatus(BaseModel):
     top: list[TypeProbability] = Field(description="The five most probable class/specialization pairs.")
     entropy: float = Field(description="Uncertainty about the type in nats (ln 27 = 3.30 before any answer).")
     done: bool
-    reason: Optional[Literal["confident", "limit"]] = Field(
-        default=None, description="'confident': the threshold was reached; 'limit': the question limit (or the pool) ran out."
+    reason: Optional[Literal["confident", "decided", "limit"]] = Field(
+        default=None,
+        description="'confident': the threshold was reached; 'decided': an answered tiebreaker settled the reading between the frontrunners; 'limit': the question limit (or the pool) ran out.",
     )
     can_reveal: bool = Field(description="True once the minimum number of questions has been answered.")
     next_question_id: Optional[str] = None
@@ -737,6 +752,8 @@ class Confidence(BaseModel):
     )
     question_factor: Optional[float] = Field(default=None, description="The scaling n / (n + question_scaling) applied for the number of questions answered.")
     role: Optional[str] = Field(default=None, description="The role of the recommended specialization.")
+    decided_by: Optional[str] = Field(default=None, description="Confidence mode: the id of the tiebreaker question whose answer settled the recommendation, when one did.")
+    decision_note: Optional[str] = Field(default=None, description="One sentence saying so, naming the finalists.")
     class_gap: float
     strong_margin: float
     moderate_margin: float

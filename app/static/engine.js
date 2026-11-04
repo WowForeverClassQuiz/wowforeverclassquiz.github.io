@@ -212,6 +212,15 @@ export function evaluate(c, answers, { allowPartial = false, length = "long" } =
     fsum(s.terms.map(([t, m]) => m * traitTotals[t])) + c.spec_multiplier * specTotals[s.gidx]));
   const specOrders = specScores.map((scores) => order(scores.length, (j) => scores[j], () => 0));
 
+  const model = adaptiveModel(c);
+  const decided = length === "adaptive" ? settledByTiebreaker(c, picks, model) : null;
+  if (decided) {          // confidence mode: an answered tiebreaker between the frontrunners names the result, ahead of the scores
+    const dCls = c.classes.findIndex((cl) => cl.specs.some((sp) => sp.gidx === decided[0]));
+    const dIdx = c.classes[dCls].specs.findIndex((sp) => sp.gidx === decided[0]);
+    classOrder.splice(0, classOrder.length, dCls, ...classOrder.filter((i) => i !== dCls));
+    specOrders[dCls] = [dIdx, ...specOrders[dCls].filter((j) => j !== dIdx)];
+  }
+
   const leader = classTotals[classOrder[0]];
   const classRows = classOrder.map((i, k) => ({
     id: c.classes[i].id,
@@ -220,7 +229,7 @@ export function evaluate(c, answers, { allowPartial = false, length = "long" } =
     rank: k + 1,
     raw_points: o(classRaw[i]),
     expected_points: o(classExp[i]),
-    gap_to_leader: o(leader - classTotals[i]),
+    gap_to_leader: o(Math.max(leader - classTotals[i], 0)),
     tied_with_previous: k > 0 && r(classTotals[i]) === r(classTotals[classOrder[k - 1]]),
   }));
   const traitRows = traitOrder.map((i, k) => ({
@@ -285,16 +294,15 @@ export function evaluate(c, answers, { allowPartial = false, length = "long" } =
   const personality = `The stars lean toward the ${pCls.name}: ${pCls.description.replace(/\.+$/, "")}. `
     + `Your answers emphasized ${join(dominant.map((t) => t.name))}. ${readings}`;
   const pSpec = pCls.specs.find((s) => s.id === primaryPick.id);
-  const model = adaptiveModel(c);
   const confidenceParts = model.confidenceParts(model.posterior(picks), pSpec.gidx, c.adaptive.class_credit, c.adaptive.role_credit);
   const qFactor = questionFactor(picks.length, c.adaptive.question_scaling);       // a result states the current confidence, scaled; only the meter keeps the best so far
-  const stated = qFactor * confidenceParts.overall;
+  const stated = decided ? decidedConfidence(c, model, answers, model.posterior(picks), decided[0], c.adaptive) : qFactor * confidenceParts.overall;
   const weighed = pSpec.terms.map(([t, m]) => `${c.traits[t].name} (×${formatG(m)})`).join(", then ");
   const scored = pSpec.terms.map(([t]) => signed(traitTotals[t])).join(", ");
   const specReading = `${pSpec.description} The ${pCls.name} ${pSpec.name} profile weighs ${weighed}; `
     + `your adjusted scores in those traits were ${scored}.`;
 
-  const gap = classTotals[classOrder[0]] - classTotals[classOrder[1]];
+  const gap = Math.max(classTotals[classOrder[0]] - classTotals[classOrder[1]], 0);
   // the margins scale with the square root of the share of questions asked (1 for the full quiz), as scoring.margin_scale
   const scale = Math.sqrt(active.length / c.questions.filter((q) => q.length_rank < LENGTHS.length).length);
   const strongMargin = c.strong_margin * scale, moderateMargin = c.moderate_margin * scale;
@@ -318,6 +326,7 @@ export function evaluate(c, answers, { allowPartial = false, length = "long" } =
       overall: o(stated),
       question_factor: o(qFactor),
       role: pSpec.role,
+      ...(decided ? { decided_by: c.questions[decided[1]].id, decision_note: decisionNote(c, decided[1]) } : {}),
       class_gap: o(gap),
       strong_margin: strongMargin,
       moderate_margin: moderateMargin,
@@ -417,11 +426,14 @@ export function adaptiveModel(c) {
     }
     return h0 - expected;
   };
+  /** How much a question asks of the person, as a multiple of a single choice (rankings and six-point splits ask more). */
+  const effort = (qi) => ({ ranking: s.effort_ranking, allocation: s.effort_allocation })[c.questions[qi].type] || 1;
   const bestQuestion = (post, remaining) => {
-    let best = null, bestGain = 0;
+    let best = null, bestScore = 0, bestGain = 0;
     for (const qi of remaining) {
       const gain = expectedGain(post, qi);
-      if (best === null || pyRound(gain, 9) > pyRound(bestGain, 9)) { best = qi; bestGain = gain; }
+      const score = gain / effort(qi);
+      if (best === null || pyRound(score, 9) > pyRound(bestScore, 9)) { best = qi; bestScore = score; bestGain = gain; }
     }
     return [best, bestGain];
   };
@@ -482,6 +494,50 @@ function recommendedType(c, picks) {
   return c.classes[ci].specs[order(scores.length, (j) => scores[j], () => 0)[0]].gidx;
 }
 
+/** The sentence a result carries when a tiebreaker question settled it, naming that question's finalists; see scoring.decision_note. */
+function decisionNote(c, qi) {
+  const names = c.questions[qi].finalists.map((g) => {
+    for (const cl of c.classes) for (const sp of cl.specs) if (sp.gidx === g) return `${sp.name} ${cl.name}`;
+    return "";
+  });
+  return `Your answer to a tiebreaker question settled the choice between ${join(names)}.`;
+}
+
+/** [specialization, question] when an answered tiebreaker settles the reading, else null; see adaptive.Model.decision. */
+function decision(c, model, post, picks, s) {
+  const n = picks.length;
+  if (s.tiebreak_min_questions <= 0 || n < Math.max(s.tiebreak_min_questions, s.min_questions)) return null;
+  let best = null;
+  for (const [qi, ai] of picks) {
+    const f = c.questions[qi].finalists;
+    if (!f.length || fsum(f.map((g) => post[g])) < s.tiebreak_mass) continue;
+    const key = [-pyRound(post[f[ai]], 9), f[ai], qi];
+    if (best === null || key[0] < best[0] || (key[0] === best[0] && (key[1] < best[1] || (key[1] === best[1] && key[2] < best[2])))) best = key;
+  }
+  if (best === null) return null;
+  const floor = Math.max(s.confidence - SOFT_BAND, 0);
+  const reach = questionFactor(n, s.question_scaling) * model.confidenceParts(post, best[1], s.class_credit, s.role_credit).overall;
+  return reach >= floor ? [best[1], best[2]] : null;
+}
+
+/** [specialization, question] a tiebreaker has decided for these picks, or null; the scoring's pick keeps its place when the Oracle is already confident of it. */
+function settledByTiebreaker(c, picks, model) {
+  const s = c.adaptive, n = picks.length;
+  if (!n) return null;
+  const post = model.posterior(picks);
+  const parts = model.confidenceParts(post, recommendedType(c, picks), s.class_credit, s.role_credit);
+  if (n >= s.min_questions && questionFactor(n, s.question_scaling) * parts.overall >= s.confidence) return null;
+  return decision(c, model, post, picks, s);
+}
+
+/** What the Oracle states when a tiebreaker has named specialization g: the meter's figure for these answers, or the current confidence if that is higher. */
+function decidedConfidence(c, model, answers, post, g, s) {
+  const ordered = resolveAnswers(c, answers, c.questions.map((q, i) => i), "long", true);
+  const overall = model.confidenceParts(post, g, s.class_credit, s.role_credit).overall;
+  const [stated, current] = statedConfidence([...confidenceTrace(c, model, ordered.slice(0, -1), s), overall], s);
+  return Math.max(stated, current);
+}
+
 function typeProbability(c, g, p) {
   for (const cl of c.classes) for (const sp of cl.specs) {
     if (sp.gidx === g) return { class_id: cl.id, class_name: cl.name, specialization_id: sp.id, specialization_name: sp.name, probability: p };
@@ -503,11 +559,20 @@ export function adaptiveStatus(c, answers) {
   const eligible = (i) => !c.questions[i].finalists.length || fsum(c.questions[i].finalists.map((g) => post[g])) >= s.tiebreak_mass;
   const remaining = c.questions.map((q, i) => i).filter((i) => !answered.has(i) && eligible(i));
   const limit = Math.min(s.max_questions, c.questions.length);
-  const parts = model.confidenceParts(post, rec, s.class_credit, s.role_credit);
+  let parts = model.confidenceParts(post, rec, s.class_credit, s.role_credit);
   const ordered = resolveAnswers(c, answers, c.questions.map((q, i) => i), "long", true);
-  const [stated, current, factor] = n ? statedConfidence([...confidenceTrace(c, model, ordered.slice(0, -1), s), parts.overall], s) : [0, 0, 0];
+  const earlier = n ? confidenceTrace(c, model, ordered.slice(0, -1), s) : [];
+  let [stated, current, factor] = n ? statedConfidence([...earlier, parts.overall], s) : [0, 0, 0];
+  const decided = n >= s.min_questions && current >= s.confidence ? null : decision(c, model, post, picks, s);
+  if (decided) {          // a tiebreaker answer names the specialization; the scoring's own pick gives way
+    rec = decided[0];
+    parts = model.confidenceParts(post, rec, s.class_credit, s.role_credit);
+    [stated, current, factor] = statedConfidence([...earlier, parts.overall], s);
+    stated = Math.max(stated, current);
+  }
   let done, reason = null;
   if (n >= s.min_questions && current >= s.confidence) { done = true; reason = "confident"; }
+  else if (decided) { done = true; reason = "decided"; }
   else if (n >= limit || !remaining.length) { done = true; reason = "limit"; }
   else done = false;
   const [nxt, gain] = done ? [null, null] : model.bestQuestion(post, remaining);

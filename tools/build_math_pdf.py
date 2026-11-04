@@ -170,6 +170,7 @@ class Simulator:
         self.tcl = np.array([ci for ci, cl in enumerate(c.classes) for _ in cl.specs])
         self.same_class = self.tcl[:, None] == self.tcl[None, :]
         self.same_role = np.array([[bool(a & b) for b in roles] for a in roles])
+        self.effort = np.array([{"ranking": c.adaptive.effort_ranking, "allocation": c.adaptive.effort_allocation}.get(q.type, 1.0) for q in c.questions])
         self.finalists = [list(q.finalists) for q in c.questions]          # tiebreakers: asked only when these hold most of the probability
         self.onehot = np.zeros((self.nt, c.n_classes))
         self.onehot[np.arange(self.nt), self.tcl] = 1.0
@@ -242,6 +243,7 @@ class Simulator:
         ct, tt, st = np.zeros(self.c.n_classes), np.zeros(self.c.n_traits), np.zeros(self.c.n_specs)
         remaining, asked, confs, ents, raws = list(range(self.nq)), [], [], [], []
         scaling = s.question_scaling
+        chosen, settled = {}, False
         stopped_at, lead = None, 0
         while remaining:
             w = np.exp(lp - lp.max())
@@ -251,7 +253,7 @@ class Simulator:
             if not pool:
                 break
             if order == "adaptive":
-                g = self.gains(post, pool)
+                g = np.asarray(self.gains(post, pool)) / self.effort[pool]          # information per unit of effort
                 q = pool[int(np.argmax(np.round(g, 9)))]
             elif order == "fixed":
                 q = pool[0]
@@ -261,6 +263,7 @@ class Simulator:
             answer_p = truth if truth is not None else self.p          # how respondents really answer; the Oracle still assumes self.p
             probs = answer_p[q][:, tau] if (tau is not None and answer == "model") else np.full(self.p[q].shape[0], 1 / self.p[q].shape[0])
             r = int(rng.choice(len(probs), p=probs / probs.sum()))
+            chosen[q] = r
             lp += self.logp[q][r]
             ct += self.cd[q][r]
             tt += self.td[q][r]
@@ -273,10 +276,22 @@ class Simulator:
             raws.append(float(post @ self.credit(rec)))
             factor = len(asked) / (len(asked) + scaling) if scaling > 0 else 1.0
             current = factor * raws[-1]
+            tn = s.tiebreak_min_questions
+            if not full and tn > 0 and current < conf and len(asked) >= max(tn, mn):               # a tiebreaker answered between the frontrunners settles the reading
+                named = [(-round(float(post[self.finalists[x][chosen[x]]]), 9), self.finalists[x][chosen[x]]) for x in asked
+                         if self.finalists[x] and post[self.finalists[x]].sum() >= mass]
+                if named:
+                    g_named = min(named)[1]
+                    reach = factor * float(post @ self.credit(g_named))
+                    if reach >= max(conf - adaptive_mod.SOFT_BAND, 0.0):
+                        rec, current, settled = g_named, reach, True
+                        raws[-1] = reach / factor
             stated = current if current >= conf else adaptive_mod.compress(factor * max(raws), conf)          # the best certainty so far, scaled: it only rises
+            if settled:
+                stated = max(stated, current)
             confs.append(stated)
             ents.append(float(-(post[post > 0] * np.log(post[post > 0])).sum()))
-            if stopped_at is None and (len(asked) >= mx or (len(asked) >= mn and current >= conf)):
+            if stopped_at is None and (len(asked) >= mx or (len(asked) >= mn and current >= conf) or settled):
                 stopped_at = len(asked)
                 final = (rec, stated, int(post.argmax()))
                 if not full:
@@ -286,7 +301,7 @@ class Simulator:
             final = (rec, stated, int(post.argmax()))
         earned = float(self.credit(final[0])[tau]) if tau is not None else 0.0
         return {"n": stopped_at, "conf": final[1], "right": (tau is not None and final[0] == tau), "earned": earned,
-                "class_right": bool(tau is not None and self.tcl[final[0]] == self.tcl[tau]), "mode": final[2], "confs": confs, "ents": ents, "asked": asked}
+                "class_right": bool(tau is not None and self.tcl[final[0]] == self.tcl[tau]), "mode": final[2], "confs": confs, "ents": ents, "asked": asked, "settled": settled}
 
 
 def cohort(sim: Simulator, n: int, seed: int, **kw):
@@ -550,7 +565,7 @@ def build(cfg: Config, out: Path, quick: bool = False) -> dict:
                 "confidence; with c = r = 0 the confidence is just the first of them.", SMALL)]
     story += [P("8.3&nbsp;&nbsp;Choosing the next question", H2),
               P("For each unanswered question the Oracle computes the <b>expected information gain</b>: how much, on average, the answer would reduce the uncertainty about the type. "
-                "It asks the question with the largest gain (ties go to the earlier question; gains are compared after rounding to nine decimals).")]
+                "It asks the question with the largest gain per unit of effort (section 8.12; ties go to the earlier question; gains are compared after rounding to nine decimals).")]
     story += [eq(r"H(\pi)=-\sum_{\tau}\pi(\tau)\ln\pi(\tau)\qquad \mathrm{IG}(q)=H(\pi)-\sum_{r}P(r\,|\,q)\,H\left(\pi(\cdot\,|\,r)\right)\qquad P(r\,|\,q)=\sum_{\tau}\pi(\tau)\,P(r\,|\,\tau,q)")]
     post0 = np.full(27, 1 / 27)
     gains0 = sorted(zip(sim.gains(post0, list(range(sim.nq))), [q.id for q in c.questions], [q.type for q in c.questions]), reverse=True)
@@ -558,9 +573,9 @@ def build(cfg: Config, out: Path, quick: bool = False) -> dict:
     for k, (g, qid, ty) in enumerate(gains0[:8], start=1):
         rows.append([str(k), qid.upper(), ty.replace("_", " "), f"{g:.3f}", pct(g / math.log(27), 1)])
     story += [table(rows, widths=[0.5 * inch, 0.9 * inch, 1.1 * inch, 1.6 * inch, 1.6 * inch]),
-              P("<b>Table 10.</b> The eight most informative first questions (before any answer). The Oracle always opens with the first one; what it asks next depends on your answers.", SMALL)]
+              P("<b>Table 10.</b> The eight most informative first questions (before any answer). The interface opens with a random personality question (section 8.11); what the Oracle asks next depends on your answers.", SMALL)]
     story += [P("8.4&nbsp;&nbsp;When to stop", H2)]
-    story += [eq(r"\mathrm{stop\ when}\quad n\geq n_{\min}\ \ \mathrm{and}\ \ \frac{n}{n+k}\,R_n\geq \theta\quad\mathrm{or}\quad n\geq n_{\max},\qquad R_n=\mathrm{confidence\ after\ }n\mathrm{\ answers}")]
+    story += [eq(r"\mathrm{stop\ when}\quad n\geq n_{\min}\ \ \mathrm{and}\ \ \frac{n}{n+k}\,R_n\geq \theta\quad\mathrm{or}\quad n\geq n_{\max},\qquad R_n=\mathrm{confidence\ after\ }n\mathrm{\ answers}\quad\mathrm{(or\ a\ tiebreaker\ decides,\ section\ 8.12)}")]
     story += [table([["Setting", "Symbol", "Value", "Meaning"],
                      ["Minimum questions", "n<sub>min</sub>", "none" if ad.min_questions <= 1 else str(ad.min_questions), "never reveal earlier (1 means no minimum)"],
                      ["Maximum questions", "n<sub>max</sub>", str(ad.max_questions), "reveal anyway (a “Close call” is possible)"],
@@ -571,7 +586,10 @@ def build(cfg: Config, out: Path, quick: bool = False) -> dict:
                      ["Credit for a similar role", "r", f"{ad.role_credit:g}", "weight of a specialization sharing a role with the recommended one"],
                      ["Tiebreaker share", "m", pct(ad.tiebreak_mass, 0), "probability a tiebreaker's finalists must hold before it is asked"],
                      ["Question scaling", "k", f"{ad.question_scaling:g}", "the confidence counts for n / (n + k) after n questions (0 turns it off)"],
-                     ["Random opening", "", "on" if ad.random_opening else "off", "the first question is drawn at random from the personality questions"]],
+                     ["Random opening", "", "on" if ad.random_opening else "off", "the first question is drawn at random from the personality questions"],
+                     ["Tiebreaker decision", "n<sub>t</sub>", "off" if ad.tiebreak_min_questions <= 0 else str(ad.tiebreak_min_questions), "an answered tiebreaker settles the reading from this many questions on (0 turns it off)"],
+                     ["Effort of a ranking", "e<sub>r</sub>", f"{ad.effort_ranking:g}", "a ranking counts as this many single choices when choosing the next question"],
+                     ["Effort of a six-point split", "e<sub>a</sub>", f"{ad.effort_allocation:g}", "a six-point split counts as this many single choices"]],
                     widths=[1.7 * inch, 0.8 * inch, 0.8 * inch, WIDTH - 3.3 * inch], align_right_from=-1),
               P("<b>Table 11.</b> Confidence-mode settings (admin: Profiles & Settings).", SMALL)]
 
@@ -829,8 +847,58 @@ def build(cfg: Config, out: Path, quick: bool = False) -> dict:
               P(f"<b>Table 22.</b> The effect of k, under the model, for {n_k} simulated respondents per row. Scaling asks more questions and earns more credit. At k = 1 no reading stops before about ten questions "
                 "(the scaling then needs a raw confidence of almost 1), the stated confidence is a little below what the readings earn for consistent respondents, and for inconsistent ones it comes closest to it.", SMALL),
               P("<b>The first question.</b> Confidence mode opens with a question drawn at random from the personality questions (the thirty fixed-quiz questions and the class-separating ones), so that "
-                "two readings do not always begin the same way. After that every question is chosen by information gain as before. The most informative first question, which the interface does not use, "
+                "two readings do not always begin the same way. After that every question is chosen by information gain per unit of effort (section 8.12). The most informative first question, which the interface does not use, "
                 "is always the same one.")]
+
+    # ---- effort and the tiebreaker decision
+    print("simulating effort and the tiebreaker decision ...", flush=True)
+    n_e = 150 if n_sim < 100 else 800
+    before_cfg = cfg.model_copy(deep=True)
+    before_cfg.scoring.adaptive.effort_ranking = 1.0
+    before_cfg.scoring.adaptive.effort_allocation = 1.0
+    before_cfg.scoring.adaptive.tiebreak_min_questions = 0
+
+    def stalls(confs):
+        run, worst = 0, 0
+        for a, b in zip(confs, confs[1:]):
+            run = run + 1 if b - a < 0.01 else 0
+            worst = max(worst, run)
+        return worst >= 4
+
+    eres = {}
+    rows = [["Respondents are", "Rules", "Mean questions", "Six-point splits", "Rankings", "Exact specialization right", "Credit earned", "Settled by a tiebreaker", "Figure stalls"]]
+    for kcons in (1.0, 0.7, 0.5):
+        for label, ecfg in (("before", before_cfg), ("now", cfg)):
+            esim = Simulator(ecfg)
+            etrue = Simulator(ecfg, sharp_spec=ad.sharpness_spec * kcons, sharp_class=ad.sharpness_class * kcons).p
+            r = cohort(esim, n_e, 909, truth=etrue)
+            eres[(kcons, label)] = r
+            asked = [esim.c.questions[q].type for run in r["runs"] for q in run["asked"]]
+            rows.append([f"{pct(kcons, 0)} as consistent as assumed", label, f"{r['mean_n']:.1f}", pct(asked.count("allocation") / len(asked)), pct(asked.count("ranking") / len(asked)),
+                         pct(r["accuracy"]), pct(r["earned"]), pct(float(np.mean([run["settled"] for run in r["runs"]])), 0), pct(float(np.mean([stalls(run["confs"]) for run in r["runs"]])), 0)])
+    story += [P("8.12&nbsp;&nbsp;Preferring simple questions, and settling close calls", H2),
+              P("<b>Effort.</b> Questions are not equally easy to answer. A single choice asks for one pick, a ranking for an order of four answers and a six-point split for an allocation. "
+                f"The Oracle therefore asks the question with the most information per unit of effort, IG(q) / e(q), where e is 1 for a single choice or a scale, e<sub>r</sub> = {ad.effort_ranking:g} for a ranking "
+                f"and e<sub>a</sub> = {ad.effort_allocation:g} for a six-point split. A hard question is still asked when it is far more informative than the simple ones, which is what happens when a reading "
+                "needs a question that only a ranking or a split can supply."),
+              eq(r"q^{*}=\arg\max_{q}\ \frac{\mathrm{IG}(q)}{e(q)}"),
+              P("<b>Settling close calls.</b> When the frontrunners are two specializations of one class, or two that share a role such as Protection Paladin and Protection Warrior, the credits cap the "
+                "confidence until the probability has settled on one of them: two equally likely tanks give R = 0.5 + 0.5 × 0.5 = 0.75, which no further question about the two of them can raise "
+                "except the one that forces a choice. Without a rule the stated figure then creeps upward by a fraction of a point per question (n / (n + k) rises slowly after ten questions) while the "
+                "Oracle keeps asking. So once n<sub>t</sub> questions have been answered and a tiebreaker whose finalists together hold at least m of the probability has been answered, the Oracle "
+                "stops and recommends the specialization that answer named, provided the scaled confidence in it is within a tenth of the threshold:"),
+              eq(r"\mathrm{decide\ when}\quad n\geq n_t\ \ \mathrm{and}\ \ \frac{n}{n+k}\,R_n(g)\geq\theta-0.10,\qquad g=\mathrm{the\ specialization\ named\ by\ an\ answered\ tiebreaker}"),
+              P("Of several answered tiebreakers the one that names the specialization the model finds most probable decides, and the decision does not depend on the order of the answers. "
+                "A reading that is already confident of the scoring's own recommendation (C<sub>n</sub> at or above the threshold) is not overruled. When a tiebreaker decides, the scoring's pick gives way: the result "
+                "names the chosen specialization and says that a tiebreaker settled it, and the stated figure is the larger of the meter's value and the current confidence."),
+              table(rows, widths=[1.35 * inch, 0.5 * inch, 0.65 * inch, 0.65 * inch, 0.6 * inch, 0.8 * inch, 0.6 * inch, 0.75 * inch, WIDTH - 5.9 * inch]),
+              P(f"<b>Table 23.</b> The Oracle before this change (every question one unit of effort, no decision) and now, under the model, for {n_e} simulated respondents per row. "
+                "A stall is four or more questions in a row in which the stated figure rises by less than one point. Six-point splits and rankings fall to a small share of the questions asked at no cost in length. "
+                f"The decision ends {pct(float(np.mean([run['settled'] for run in eres[(1.0, 'now')]['runs']])), 0)}, {pct(float(np.mean([run['settled'] for run in eres[(0.7, 'now')]['runs']])), 0)} and "
+                f"{pct(float(np.mean([run['settled'] for run in eres[(0.5, 'now')]['runs']])), 0)} of the readings at the three levels of consistency. It costs exact-specialization accuracy when answers are scattered, because one tiebreaker "
+                f"answer then decides: {100 * (eres[(1.0, 'before')]['accuracy'] - eres[(1.0, 'now')]['accuracy']):.1f}, {100 * (eres[(0.7, 'before')]['accuracy'] - eres[(0.7, 'now')]['accuracy']):.1f} and "
+                f"{100 * (eres[(0.5, 'before')]['accuracy'] - eres[(0.5, 'now')]['accuracy']):.1f} points at the three levels. The share of readings whose figure stalls does not fall. "
+                "Raising n<sub>t</sub> or turning the decision off (n<sub>t</sub> = 0) gives the accuracy back at the price of longer readings.", SMALL)]
 
     # ================================================================ 9 worked example
     print("worked example ...", flush=True)
@@ -857,7 +925,7 @@ def build(cfg: Config, out: Path, quick: bool = False) -> dict:
               P("A fixed example respondent taking the quiz in confidence mode: a person of type Druid Feral Combat who always gives the response the model finds most likely for that type. "
                 "At each step the table shows which question the Oracle chose, the response, how much information it expected from it, and where the posterior stood after the answer."),
               table(rows, widths=[0.3 * inch, 0.7 * inch, 0.8 * inch, 0.85 * inch, 0.85 * inch, 1.65 * inch, 0.85 * inch, WIDTH - 6.0 * inch], align_right_from=-1, font=7.2),
-              P(f"<b>Table 23.</b> The example run stops after {fin.answered} questions with {pct(fin.confidence)} confidence in {fin.recommended.class_name} {fin.recommended.specialization_name}. "
+              P(f"<b>Table 24.</b> The example run stops after {fin.answered} questions with {pct(fin.confidence)} confidence in {fin.recommended.class_name} {fin.recommended.specialization_name}. "
                 "The five most probable types at the end:", SMALL)]
     rows = [["Type", "Probability"]] + [[f"{t.class_name} {t.specialization_name}", pct(t.probability, 2)] for t in fin.top]
     story += [table(rows, widths=[2.6 * inch, 1.2 * inch])]

@@ -502,6 +502,17 @@ def _tie_groups(order: Sequence[int], scores: Sequence[float]) -> list[list[int]
     return groups
 
 
+def decision_note(c: Compiled, qi: int) -> str:
+    """The sentence a result carries when a tiebreaker question settled it, naming the finalists of that question."""
+    names = []
+    for g in c.questions[qi].finalists:
+        for cls in c.classes:
+            for sp in cls.specs:
+                if sp.gidx == g:
+                    names.append(f"{sp.name} {cls.name}")
+    return f"Your answer to a tiebreaker question settled the choice between {_join(names)}."
+
+
 def _join(items: Sequence[str]) -> str:
     items = list(items)
     if len(items) <= 1:
@@ -566,6 +577,17 @@ def evaluate(
     spec_scores = [_spec_scores(c, ci, trait_totals, spec_totals) for ci in range(nc)]
     spec_orders = [_spec_order(s) for s in spec_scores]
 
+    model, decided = None, None
+    if length == "adaptive":
+        from .adaptive import Model, settled_by_tiebreaker     # imported here: adaptive.py builds on this module
+        model = Model(c)
+        decided = settled_by_tiebreaker(c, picks, model)
+    if decided:        # confidence mode: an answered tiebreaker between the frontrunners names the result, ahead of the scores
+        d_cls = next(ci for ci, cls in enumerate(c.classes) if any(sp.gidx == decided[0] for sp in cls.specs))
+        d_idx = next(j for j, sp in enumerate(c.classes[d_cls].specs) if sp.gidx == decided[0])
+        class_order = [d_cls] + [i for i in class_order if i != d_cls]
+        spec_orders[d_cls] = [d_idx] + [j for j in spec_orders[d_cls] if j != d_idx]
+
     leader = class_totals[class_order[0]]
     class_rows: list[ClassScore] = []
     for rank, i in enumerate(class_order, start=1):
@@ -577,7 +599,7 @@ def evaluate(
                 rank=rank,
                 raw_points=_o(class_raw[i]),
                 expected_points=_o(class_exp[i]),
-                gap_to_leader=_o(leader - class_totals[i]),
+                gap_to_leader=_o(max(leader - class_totals[i], 0.0)),
                 tied_with_previous=rank > 1 and _r(class_totals[i]) == _r(class_totals[class_order[rank - 2]]),
             )
         )
@@ -667,7 +689,7 @@ def evaluate(
         f"your adjusted scores in those traits were {scored}."
     ).strip()
 
-    gap = class_totals[class_order[0]] - class_totals[class_order[1]]
+    gap = max(class_totals[class_order[0]] - class_totals[class_order[1]], 0.0)
     scale = margin_scale(c, active)
     strong_margin, moderate_margin = c.strong_margin * scale, c.moderate_margin * scale
     if _r(gap) >= strong_margin:
@@ -676,11 +698,14 @@ def evaluate(
         label = "Clear lean"
     else:
         label = "Close call"
-    from .adaptive import Model, question_factor     # imported here: adaptive.py builds on this module
-    model = Model(c)
+    from .adaptive import Model, question_factor
+    model = model or Model(c)
     parts = model.confidence_parts(model.posterior(picks), p_spec.gidx, c.adaptive.class_credit, c.adaptive.role_credit)
     factor = question_factor(len(picks), c.adaptive.question_scaling)       # a result states the current confidence, scaled; only the meter keeps the best so far
     stated = factor * parts.overall
+    if decided:
+        from .adaptive import decided_confidence
+        stated = decided_confidence(c, model, answers, model.posterior(picks), decided[0], c.adaptive)          # the figure the meter was heading to, so it does not fall on the reveal
     confidence = Confidence(
         label=label,
         probability=_o(parts.spec),
@@ -689,6 +714,8 @@ def evaluate(
         overall=_o(stated),
         question_factor=_o(factor),
         role=p_spec.role,
+        decided_by=c.questions[decided[1]].id if decided else None,
+        decision_note=decision_note(c, decided[1]) if decided else None,
         class_gap=_o(gap),
         strong_margin=strong_margin,
         moderate_margin=moderate_margin,
@@ -738,7 +765,7 @@ def evaluate(
     if include_explanation:
         explanation = _explain(
             c, picks, class_order, class_totals, trait_totals, spec_totals, spec_scores, spec_orders, p_ci, alt_ci,
-            trait_order, include_counterfactuals,
+            trait_order, include_counterfactuals and not decided,          # the what-if answers describe the scores alone, which a tiebreaker decision overrides
         )
     return EvaluationResponse(
         result=result, alternatives=alternatives, rankings=rankings, explanation=explanation, metadata=metadata
