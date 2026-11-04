@@ -68,7 +68,7 @@ load, a coloured badge takes its place. To host them yourself or drop them, chan
 **Confidence mode** (the default) works like a twenty-questions game. After each answer the Oracle works out how likely each of the 27 pairs of class and specialization is,
 picks the unanswered question that will tell it the most, and stops as soon as its confidence in the specialization the scoring currently recommends has reached **90%**. There is no
 minimum number of questions, and it never asks more than 30. A certainty meter shows how sure it was when each question was put to you (it starts at 0%, rises with every question, and moves when you go on to the next question, not when you
-choose an answer), with the odds of the class, the specialization and the role beside it, and you can also *Reveal now* at whatever certainty
+choose an answer; it is the only percentage the quiz shows), and you can also *Reveal now* at whatever certainty
 it has reached. The result then says which mode it was, how many questions it rests on and the model's confidence ("93% sure"). Simulated respondents need about 6
 questions on average (a median of 5, and 9 or fewer for nine in ten); people who answer at random run to the limit about a third of the time and get a lower confidence
 and a weaker label.
@@ -86,8 +86,8 @@ and a weaker label.
   against 86.0% without the scaling, at the cost of about five more questions (11.7 against 6.2); the stated 91% is then a little below what the readings earn.
 * **What "sure" means.** The confidence is not only the probability of one specialization. Every type earns credit toward the recommendation: 1 for the recommended specialization,
   half for another specialization of its class and half for one with a similar role (tank, healer, melee damage or ranged damage), the larger of the two when both apply. A person whose three Mage
-  specializations are all gaining, or who sits between Protection Paladin and Protection Warrior, therefore reaches 90% sooner. The probabilities of the specialization, the class and the role are shown
-  beside the figure, and the two credits are in Profiles & Settings (set both to 0 for the specialization's probability alone). It is an expected credit, not a probability of the exact specialization;
+  specializations are all gaining, or who sits between Protection Paladin and Protection Warrior, therefore reaches 90% sooner. The probabilities of the specialization, the class and the role are in the
+  API's answers (`/adaptive/next` and `/evaluate`) and the maths document, not on screen, and the two credits are in Profiles & Settings (set both to 0 for the specialization's probability alone). It is an expected credit, not a probability of the exact specialization;
   in simulation it saves about half a question to two questions, at a cost of a few points of exact-specialization accuracy for inconsistent respondents.
 * **The question pool.** 103 questions: the thirty of the fixed quizzes plus q31 to q103, which only confidence mode asks
   (*Confidence mode only* under *Asked in* in the Question Editor). The thirty separate classes well and the specializations of one class poorly: Arcane against Frost Mage

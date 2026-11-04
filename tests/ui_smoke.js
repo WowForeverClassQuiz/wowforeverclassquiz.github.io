@@ -80,7 +80,7 @@
   const until = async (test, ms = 4000) => { for (let t = 0; t < ms && !test(); t += 50) await sleep(50); return test(); };
   check("confidence mode is offered first and says how it works", /Confidence/.test(document.querySelector(".lengths").innerText) && /Up to 30 questions/.test(document.querySelector(".lengths").innerText));
   document.getElementById("begin").click(); await sleep(500);
-  let asked = 0, sawLabel = "", sawDetail = "", moved = 0, movedOnChoice = 0, openedWith = "";
+  let asked = 0, sawLabel = "", maxPercents = 0, moved = 0, movedOnChoice = 0, openedWith = "";
   const meters = [];
   const meter = () => document.querySelector(".certainty-bar")?.getAttribute("aria-valuenow");
   for (let guard = 0; guard < 40; guard++) {
@@ -93,14 +93,14 @@
     asked++;
     await until(() => document.getElementById("reveal") || (document.getElementById("next") && !document.getElementById("next").disabled));
     sawLabel = document.getElementById("certainty-label")?.textContent || sawLabel;
-    sawDetail = document.getElementById("certainty-detail")?.textContent || sawDetail;
+    maxPercents = Math.max(maxPercents, (document.getElementById("view").innerText.match(/\d+%/g) || []).length);
     if (meter() !== before) movedOnChoice++;
     if (document.getElementById("reveal")) break;
     document.getElementById("next").click(); await sleep(150);
     if (meter() !== before) moved++;
   }
   check("the meter never moves when an answer is chosen, only when the next question comes", movedOnChoice === 0 && moved > 0, `moved on choice ${movedOnChoice}, moved on next ${moved}`);
-  check("the meter also shows the class, specialization and role odds", /\d+% · .+ \d+% · .+ \d+%/.test(sawDetail), sawDetail);
+  check("the only percentage on a question screen is the Oracle's own", maxPercents === 1 && !document.getElementById("certainty-detail") && !document.querySelector(".certainty-note"), maxPercents);
   const openerIds = (await (await fetch("/api/v1/adaptive/next", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ answers: {} }) })).json()).openers;
   check("confidence mode opened with one of the personality questions", openerIds.length > 40 && openerIds.includes(openedWith), openedWith);
   check("the Oracle reads 0% before the first answer and its meter never falls", meters[0] === "0" && meters.every((v, i) => i === 0 || Number(v) >= Number(meters[i - 1])) && Number(meters[meters.length - 1]) > 0, meters.join(" "));
@@ -109,7 +109,7 @@
   document.getElementById("reveal").click(); await sleep(2200);
   page = document.getElementById("view").innerText;
   check("the result is a confidence reading on the questions it asked", /Confidence reading/.test(page) && new RegExp(`${asked} questions`).test(page), asked);
-  check("the result shows the class, specialization and role odds", /gives .+ \d+%, .+ \d+% and .+ \d+%/.test(document.getElementById("confidence-detail")?.textContent || ""), document.getElementById("confidence-detail")?.textContent);
+  check("the result shows only the Oracle's percentage", ((document.querySelector(".result-hero")?.innerText.match(/\d+%/g) || []).length === 1) && !document.getElementById("confidence-detail"), document.querySelector(".result-hero")?.innerText.match(/\d+%/g));
   const shareMain = document.getElementById("share-main"), shareHero = document.querySelector(".result-hero");
   check("a prominent Share my results! button sits at the top of the result, inside the hero", !!shareMain && /Share my results!/.test(shareMain.textContent) && !!shareHero && shareHero.contains(shareMain) && shareMain.classList.contains("primary"));
   check("the share bar also offers the clipboard, X, Reddit and email", !!document.getElementById("share-top-copy") && ["share-x", "share-reddit", "share-email"].every((id) => (document.getElementById(id)?.getAttribute("href") || "").length > 20));

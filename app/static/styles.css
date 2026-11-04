@@ -482,4 +482,8 @@ a.spec-class-head:hover, a.spec-class-head:focus-visible { background: var(--acc
 .certainty-bar { position: relative; overflow: visible; }
 .certainty-bar i { transition: width 0.4s ease; }
 .certainty-bar .tick { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--text-2); border-radius: 1px; }
-.certainty-note { font-size: 0.82rem; margin: 6px 0 12px; }
+.certainty { margin: 6px 0 4px; }
+.certainty .progress-label { align-items: baseline; margin-bottom: 8px; }
+.certainty .q-count { font-size: 0.8rem; letter-spacing: 0.08em; text-transform: uppercase; }
+.certainty .oracle-says { font-size: 0.95rem; }
+.certainty .oracle-says b { color: var(--accent); font-variant-numeric: tabular-nums; }

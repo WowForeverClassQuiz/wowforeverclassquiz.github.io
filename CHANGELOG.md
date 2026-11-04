@@ -3,6 +3,11 @@
 The version shown on the first page is `APP_VERSION` in [app/version.py](app/version.py). The scoring rules carry their own
 `algorithm_version` (currently 1.7.0), which changes only when the arithmetic or the seed weights do.
 
+## 1.10.1 · 2026-11-04
+
+* **The quiz shows one percentage: the Oracle's own.** The line of class, specialization and role percentages under the meter (which gave away what the Oracle thought mid-quiz), the paragraph of explanation under it, and the "The model gives ..." line on the result are gone, and so are the small "model" and "heuristic" tags on the result chips. The meter is one label and one bar, with the rule in a tooltip. The probabilities are still in the API and the maths document.
+* **The haunted-tower question (q46) reads naturally.** It is now "six nights alone in a house that is said to be haunted", and its answers are ways of spending the nights (waiting for it to wear itself out, getting to know it, one decisive night, reading the records). The weights are unchanged.
+
 ## 1.10.0 · 2026-11-04
 
 * **The confidence scales with the number of questions asked.** After n questions it counts for n / (n + 1) of what the model says: 50% after one question, 91% after ten, 97% after thirty. A reading therefore stops only on certainty that holds up, which in practice means about ten questions on average, and an inconsistent respondent is no longer told "90% sure" after three lucky answers. The scaling is the setting "Question scaling k" in Profiles & Settings (0 turns it off).

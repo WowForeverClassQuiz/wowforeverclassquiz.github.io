@@ -546,7 +546,7 @@ def build(cfg: Config, out: Path, quick: bool = False) -> dict:
         _p = _mdl.confidence_parts(_vec, _g(*_rec), ad.class_credit, ad.role_credit)
         _rows.append([_label, f"{_rec[0].capitalize()} {_rec[1].replace('_', ' ').title()}", pct(_p.spec), pct(_p.class_), pct(_p.role), pct(_p.overall)])
     story += [table(_rows, widths=[1.9 * inch, 1.5 * inch, 0.9 * inch, 0.8 * inch, 0.8 * inch, WIDTH - 5.9 * inch], align_right_from=2),
-              P(f"<b>Table 9.</b> The confidence for four example posteriors, with c = {ad.class_credit:g} and r = {ad.role_credit:g}. The probabilities of the specialization, its class and its role are always shown beside the "
+              P(f"<b>Table 9.</b> The confidence for four example posteriors, with c = {ad.class_credit:g} and r = {ad.role_credit:g}. The probabilities of the specialization, its class and its role are always reported with the "
                 "confidence; with c = r = 0 the confidence is just the first of them.", SMALL)]
     story += [P("8.3&nbsp;&nbsp;Choosing the next question", H2),
               P("For each unanswered question the Oracle computes the <b>expected information gain</b>: how much, on average, the answer would reduce the uncertainty about the type. "
@@ -824,7 +824,7 @@ def build(cfg: Config, out: Path, quick: bool = False) -> dict:
                 "B<sub>n</sub> rises with every question, even when a surprising answer lowers the current confidence C<sub>n</sub>. The stopping rule tests C<sub>n</sub>, not B<sub>n</sub>, so a reading "
                 "never stops on certainty it no longer has. Until C<sub>n</sub> reaches the threshold the stated figure is kept under it: from 80% up (ten points under the threshold) the scale is "
                 "compressed smoothly, by a hyperbolic tangent, toward a point one percentage point under the threshold, so the figure keeps rising without ever claiming a certainty the Oracle does not have. "
-                "The class, specialization and role odds shown beside it are the current ones, and can move either way, and a finished reading states C<sub>n</sub> itself."),
+                "The class, specialization and role probabilities in the API's answers are the current ones, and can move either way, and a finished reading states C<sub>n</sub> itself. The quiz screen shows only the Oracle's own percentage."),
               table(rows, widths=[1.5 * inch, 0.8 * inch, 0.75 * inch, 0.6 * inch, 0.85 * inch, 0.75 * inch, WIDTH - 5.25 * inch]),
               P(f"<b>Table 22.</b> The effect of k, under the model, for {n_k} simulated respondents per row. Scaling asks more questions and earns more credit. At k = 1 no reading stops before about ten questions "
                 "(the scaling then needs a raw confidence of almost 1), the stated confidence is a little below what the readings earn for consistent respondents, and for inconsistent ones it comes closest to it.", SMALL),
@@ -874,7 +874,7 @@ def build(cfg: Config, out: Path, quick: bool = False) -> dict:
               P("• <b>Balance is a property of the rules.</b> “Every class equally likely” holds when every response is equally likely. Real answers are not uniform, so real results will not be evenly spread, and nothing here claims they should be."),
               P("• <b>The confidence is exact inside a model, and the model is an assumption.</b> It says: people of a type answer by a logit choice with sharpness λ, independently, from a uniform start. Real answers are correlated and noisier or "
                 "sharper than any one λ. A person who is a real blend of several classes is treated as noise around one of them, so the confidence overstates what can be known about them. The confidence is also an expected credit, not the probability "
-                "of the exact specialization, which is always shown beside it. Read “90% sure” as “the answers are as consistent with one specialization as this model requires”; no study of real respondents backs the figure."),
+                "of the exact specialization, which the API reports with it. Read “90% sure” as “the answers are as consistent with one specialization as this model requires”; no study of real respondents backs the figure."),
               P("• <b>Talent builds are drafts.</b> The builds shown with a result come from hand-assembled talent data dated November 2, 2026 and are unverified; they play no part in the selection."),
               P("• <b>Reproducibility.</b> Everything above is deterministic given the configuration; the simulations use fixed seeds. The browser and Python engines are tested to give identical results.")]
 

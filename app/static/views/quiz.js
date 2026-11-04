@@ -204,15 +204,12 @@ async function beginAdaptive() {
 /** The meter shows how sure the Oracle was when this question was put to you. It moves when you go on to the next question, never when you choose an answer. */
 function certainty(i, s) {
   const pct = s ? Math.round(s.confidence * 100) : 0;
+  const rule = s ? `The Oracle stops once it is ${Math.round(s.threshold * 100)}% sure, after at most ${s.max_questions} questions.` : "";
   return h("div", { class: "certainty" },
-    h("div", { class: "progress-label" }, h("span", {}, `Question ${i + 1}`),
-      h("span", { id: "certainty-label" }, s ? `The Oracle is ${pct}% sure` : "Thinking…")),
-    h("div", { class: "progress certainty-bar", role: "progressbar", "aria-valuemin": 0, "aria-valuemax": 100, "aria-valuenow": pct, "aria-label": "How sure the Oracle is" },
-      h("i", { style: { width: `${pct}%` } }), s ? h("b", { class: "tick", style: { left: `${s.threshold * 100}%` }, title: `It stops at ${Math.round(s.threshold * 100)}%` }) : null),
-    s && s.answered > 0 ? h("p", { class: "muted certainty-detail", id: "certainty-detail", title: "How likely the Oracle's model thinks each is right, given your answers so far" },
-      `${s.recommended.class_name} ${Math.round(s.class_probability * 100)}% · ${s.recommended.specialization_name} ${Math.round(s.spec_probability * 100)}% · ${roleLabel(s.role)} ${Math.round(s.role_probability * 100)}%`) : null,
-    s ? h("p", { class: "muted certainty-note" },
-      `It asks the questions that tell it the most and stops once it is ${Math.round(s.threshold * 100)}% sure${s.min_questions > 1 ? `, after at least ${s.min_questions} questions` : ""} (${s.max_questions} at most). The figure only rises: it is the best certainty reached so far, counted for more as more questions are asked. A specialization of the same class, or with a similar role, counts partly toward it.`) : null);
+    h("div", { class: "progress-label" }, h("span", { class: "q-count" }, `Question ${i + 1}`),
+      h("span", { id: "certainty-label", class: "oracle-says", title: rule }, s ? ["The Oracle is ", h("b", {}, `${pct}%`), " sure"] : "Thinking…")),
+    h("div", { class: "progress certainty-bar", role: "progressbar", "aria-valuemin": 0, "aria-valuemax": 100, "aria-valuenow": pct, "aria-label": "How sure the Oracle is", title: rule },
+      h("i", { style: { width: `${pct}%` } }), s ? h("b", { class: "tick", style: { left: `${s.threshold * 100}%` } }) : null));
 }
 
 function drawAdaptiveQuestion() {
@@ -503,7 +500,7 @@ function resultText(r) {
     "",
     `Recommended: ${p.primary_specialization.name} ${p.primary_class.name} (${roleLabel(p.primary_specialization.role)})`,
     `Reading strength: ${p.confidence.label} (a heuristic based on the class gap), from ${r.metadata.total_questions} questions`,
-    p.confidence.overall != null ? `Model confidence: ${Math.round(p.confidence.overall * 100)}% sure (${p.primary_class.name} ${Math.round(p.confidence.class_probability * 100)}%, ${p.primary_specialization.name} ${Math.round(p.confidence.probability * 100)}%, ${roleLabel(p.confidence.role)} ${Math.round(p.confidence.role_probability * 100)}%)` : "",
+    p.confidence.overall != null ? `The Oracle was ${Math.round(p.confidence.overall * 100)}% sure.` : "",
     p.build ? `Build: ${p.build.name} [${p.build.status}]${p.build.tree_distribution_text ? ` ${p.build.tree_distribution_text}` : ""}` : "",
     `Also in the stars: ${a.alternative_specialization.name} ${a.alternative_class.name}; closest in ${p.primary_class.name}: ${a.second_specialization_in_primary_class.name}`,
     "",
@@ -533,17 +530,13 @@ function drawResult() {
       h("h2", {}, p.primary_specialization.name),
       h("div", { class: "chips" },
         h("span", { class: "chip" }, h("b", {}, roleLabel(p.primary_specialization.role))),
-        h("span", { class: "chip", title: p.confidence.note }, h("b", {}, p.confidence.label), h("i", {}, "heuristic")),
+        h("span", { class: "chip", title: p.confidence.note }, h("b", {}, p.confidence.label)),
         p.confidence.overall != null
-          ? h("span", { class: "chip", title: "How sure the Oracle's model is: the probability it gives this specialization, plus partial credit for the rest of the class and for specializations with a similar role. The model is an assumption about how people answer; see the maths PDF." },
-            h("b", {}, `${Math.round(p.confidence.overall * 100)}% sure`), h("i", {}, "model"))
+          ? h("span", { class: "chip", title: "How sure the Oracle is of this reading, counting a specialization of the same class or with a similar role partly, and more the more questions it asked. The Oracle's model is an assumption about how people answer; see the maths PDF." },
+            h("b", {}, `${Math.round(p.confidence.overall * 100)}% sure`))
           : null,
         p.dominant_traits.map((t) => h("span", { class: "chip" }, h("b", {}, t.name))),
         lengthChip(r)),
-      p.confidence.overall != null
-        ? h("p", { class: "muted", id: "confidence-detail", style: { fontSize: "0.88rem", margin: "10px 0 0" } },
-          `The model gives ${p.primary_class.name} ${Math.round(p.confidence.class_probability * 100)}%, ${p.primary_specialization.name} ${Math.round(p.confidence.probability * 100)}% and ${roleLabel(p.confidence.role)} ${Math.round(p.confidence.role_probability * 100)}%.`)
-        : null,
       shareBar(r),
     ),
     h("div", { class: "card prose" }, h("h3", {}, "Your temperament"), h("p", {}, p.personality_interpretation)),
