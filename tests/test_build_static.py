@@ -32,7 +32,7 @@ def test_the_site_has_the_page_the_browser_code_and_the_data(site):
         assert (site / rel).is_file(), rel
     data = json.loads((site / "data" / "oracle.json").read_text(encoding="utf-8"))
     assert len(data["quiz"]["questions"]) == 30 and len(data["builds"]) == 27 and data["format"] == 1
-    # the published builds are the draft ones with their trees, not "allocation pending" placeholders
+    # the published builds are the draft ones with their trees; none is an "allocation pending" placeholder
     assert {b["status"] for b in data["builds"].values()} == {"draft"} and all(len(b["trees"]) == 3 for b in data["builds"].values())
     assert all(s["guide"] for cl in data["engine"]["classes"] for s in cl["specs"])
     assert (site / "oracle-math.pdf").is_file() == (ROOT / "docs" / "oracle-math.pdf").exists()        # the maths PDF travels with the site

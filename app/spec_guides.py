@@ -3,7 +3,7 @@
 This is general guidance about how these roles and gear types work in Classic-style World of Warcraft. It was not read
 from World of Warcraft: Forever's item list, which may differ, so the interface labels it as general guidance. Each entry has:
 
-  dungeon_role / raid_role  what the player is usually asked to do in five-player dungeons and in raids
+  dungeon_role, raid_role   what the player is usually asked to do in five-player dungeons and in raids
   gear                      what to look for on items
   competes_with             which specializations tend to want the same items, and so compete for the same drops
 
@@ -15,7 +15,7 @@ GUIDES: dict[tuple[str, str], dict] = {
     # ---------------------------------------------------------------- Druid
     ("druid", "balance"): dict(
         dungeon_role="Ranged spell damage. You can also slow or put extra enemies to sleep, give the healer mana back with Innervate, and bring a fallen ally back in the middle of a fight.",
-        raid_role="Ranged spell damage with group utility (mana for healers, a combat resurrection). Guilds usually bring a few for that utility rather than as their top damage dealers.",
+        raid_role="Ranged spell damage with group utility (mana for healers, a combat resurrection). Guilds usually bring a few for that utility, and seldom count on them as top damage dealers.",
         gear=[
             "Spell damage and Intellect above everything else; spell critical strike chance next.",
             "Spell hit, so your spells are not resisted by tougher enemies.",

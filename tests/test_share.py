@@ -36,9 +36,9 @@ def rev(client):
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_the_default_blurb_names_the_result_the_numbers_and_a_link():
     text = run_share('return m.renderShare(m.DEFAULT_SHARE_TEMPLATE, m.shareValues(m.SAMPLE_RESULT, { link: "https://example.test/oracle/", title: "T" }));')
-    assert "Druid – Feral Combat" in text and "Druid +13.39 · Hunter +3.08 · Shaman +2.97" in text
+    assert "Feral Combat Druid" in text and "Druid +13.39 · Hunter +3.08 · Shaman +2.97" in text
     assert "Mage" not in text.split("Class scores:")[1].split("(")[0]                        # only the top three classes
-    assert "strong lean, 20 questions" in text and "Hunter – Marksmanship" in text and "Balance" in text
+    assert "strong lean, 20 questions" in text and "Marksmanship Hunter" in text and "Balance" in text
     assert text.rstrip().endswith("https://example.test/oracle/")
 
 
@@ -60,7 +60,7 @@ def test_every_placeholder_gets_a_value_and_an_unknown_one_is_left_as_written():
 def test_the_participant_page_builds_its_blurb_from_the_configured_template():
     quiz = (ROOT / "app" / "static" / "views" / "quiz.js").read_text(encoding="utf-8")
     assert "state.quiz.share_template" in quiz and "renderShare" in quiz and 'id: "share-text"' in quiz
-    assert "The stars say I'm" not in quiz                                              # the wording lives in the template, not the page
+    assert "The stars say I'm" not in quiz                                              # the wording lives in the template and never in the page
 
 
 # ------------------------------------------------------------------ the admin can change it

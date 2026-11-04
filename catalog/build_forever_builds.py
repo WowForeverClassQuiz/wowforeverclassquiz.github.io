@@ -1,4 +1,4 @@
-"""Builds 27 BEST-GUESS leveling / general-PvE talent builds on the DRAFT Forever talent catalog.
+"""Builds 27 BEST-GUESS leveling and general-PvE talent builds on the DRAFT Forever talent catalog.
 
     python catalog/build_forever_builds.py     # writes forever-builds-draft-2026-11-03.json next to this file
 
@@ -6,7 +6,7 @@ These are NOT verified and NOT authoritative. Method, honestly stated:
 
   * Starting point: RankedBoost's WoW Forever build pages (build 1.60.1.70707, "updated November 2, 2026"),
     one page per class, which list named talents with ranks for 3 to 5 builds each. Where RankedBoost has a
-    leveling build for a specialization it is the model; otherwise its PvE damage / healing / tank build is,
+    leveling build for a specialization it is the model; otherwise its PvE damage, healing or tank build is,
     and Rogue Subtlety (RankedBoost only has a PvP build) is my own extrapolation. Warcraft Tavern's beta
     leveling guides and Mobalytics' Fury leveling guide were read for hints only (their talent plans are images
     or stop at level 30).
@@ -250,7 +250,7 @@ def expand(cls_id, picks):
                 raise SystemExit(f"{cls_id}: unknown talent '{name}'")
             t_tree, t = idx[name]
             if t_tree != tree:
-                raise SystemExit(f"{cls_id}: '{name}' is in {t_tree}, not {tree}")
+                raise SystemExit(f"{cls_id}: '{name}' is in {t_tree}, which differs from the expected {tree}")
             if rank > t.max_rank:
                 raise SystemExit(f"{cls_id}: '{name}' rank {rank} exceeds max {t.max_rank}")
             if t.id in alloc:
@@ -313,7 +313,7 @@ for d in D:
     bid = f"{cls}-{spec}-leveling".replace("_", "-")
     pri, gear = guidance(cls, alloc, order, [s.id for s in cobj.specializations], spec)
     build = Build(
-        id=bid, class_id=cls, specialization_id=spec, name=f"{spec_obj.name} — Leveling & General PvE (draft)",
+        id=bid, class_id=cls, specialization_id=spec, name=f"{spec_obj.name}: leveling and general PvE (draft)",
         role=d["role"], purpose="leveling_pve", level=60, total_points=51, allocations=alloc, leveling_order=order,
         combat_priorities=pri, equipment_notes=gear, professions=[],
         source=f"BEST GUESS by Claude, 2026-11-03. Model: {d['model']}, remapped onto the draft Nov 2 talent trees. Not verified.",

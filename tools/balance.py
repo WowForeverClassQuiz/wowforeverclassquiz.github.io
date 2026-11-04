@@ -7,8 +7,8 @@
     python tools/balance.py report --config exported-config.json
 
 "Under random answers" means every question is answered uniformly at random over its possible responses
-(each rating 1-10, each answer, each pair). The shares are diagnostics of the scoring rules, not population
-probabilities. The simulator replays exactly the engine's arithmetic (baseline-subtracted deltas, 9-decimal
+(each rating 1-10, each answer, each pair). The shares diagnose the scoring rules and say nothing
+about how real people answer. The simulator replays exactly the engine's arithmetic (baseline-subtracted deltas, 9-decimal
 comparison, tie-break order), vectorized.
 """
 from __future__ import annotations

@@ -15,7 +15,7 @@
   const api = async (path, opts) => (await fetch("/api/v1" + path, opts)).json();
   const btn = (text, i = 0) => [...document.querySelectorAll("button")].filter((b) => b.textContent.trim() === text)[i];
   const go = async (hash, ms = 1100) => { location.hash = hash; await sleep(ms); };
-  // A fixed answer set for all thirty questions -> Druid / Feral Combat on the seed configuration (the same set as tests/conftest.py;
+  // A fixed answer set for all thirty questions -> Feral Combat Druid on the seed configuration (the same set as tests/conftest.py;
   // two questions are pick-two (pairs), three are rankings (orderings) and three spend six points (splits)).
   const ANSWERS = { q01: "a", q02: "c", q03: "0-0-6-0", q04: "a", q05: "c", q06: "d", q07: "b>c>a>d", q08: "d", q09: "3-0-0-3", q10: "a", q11: "a>c>b>d", q12: "b", q13: "d", q14: "c",
     q15: "3-3-0-0", q16: "c", q17: "6", q18: "1", q19: "10", q20: "10", q21: "5", q22: "10", q23: "1", q24: "5", q25: "b+c", q26: "a>b>c>d", q27: "b+d", q28: "b", q29: "b", q30: "b" };
@@ -95,7 +95,7 @@
   page = document.getElementById("view").innerText;
   check("the result is a confidence reading on the questions it asked", /Confidence reading/.test(page) && new RegExp(`${asked} questions`).test(page), asked);
   check("the result states the model's confidence", /\d+% sure/.test(page) && (Number(/(\d+)% sure/.exec(page)[1]) >= 90), /(\d+)% sure/.exec(page)?.[0]);
-  check("the confidence reading found Druid / Feral Combat, like the full quiz", document.querySelector(".result-hero h1")?.textContent === "Druid" && document.querySelector(".result-hero h2")?.textContent === "Feral Combat");
+  check("the confidence reading found Feral Combat Druid, like the full quiz", document.querySelector(".result-hero h1")?.textContent === "Druid" && document.querySelector(".result-hero h2")?.textContent === "Feral Combat");
   check("a confidence reading offers no sharpening step", !document.getElementById("refine"));
   document.getElementById("restart").click(); await sleep(100);
 
@@ -147,7 +147,7 @@
   document.querySelectorAll(".answer input")[1].click(); await sleep(50);
   document.getElementById("next").click(); await sleep(50);
   document.getElementById("prev").click(); await sleep(50);
-  check("Previous/Next keep the chosen answer", document.querySelectorAll(".answer input")[1].checked);
+  check("Previous and Next keep the chosen answer", document.querySelectorAll(".answer input")[1].checked);
 
   // ---- 2b. pick-two locks after two choices; a scale rating is a single choice
   const pick = quiz.questions.find((q) => q.type === "pick_two");
@@ -179,7 +179,7 @@
   check("Result shows the class and specialization paragraphs", document.body.innerText.includes("What the Druid does") && document.body.innerText.includes(apiResult.result.specialization_overview.slice(0, 30)));
   const text = document.body.innerText;
   check("the build is drawn as three talent trees with talents filled in", document.querySelectorAll(".talent-tree").length === 3 && document.querySelectorAll(".talent.some, .talent.max").length > 5, document.querySelectorAll(".talent.some, .talent.max").length);
-  check("the build is shown although it is not verified, and says so", /Draft - not verified/.test(text) && !!document.querySelector(".talent-trees"));
+  check("the build is shown although it is not verified, and says so", /Draft \(not verified\)/.test(text) && !!document.querySelector(".talent-trees"));
   check("the build warns it may be out of date and gives the date of the talent data", /may not match the current World of Warcraft: Forever talent trees/.test(text) && /last updated\s*November 2, 2026/.test(text));
   check("the role in dungeons and raids, gear to look for and competing specs are shown", ["in dungeons", "in raids", "gear to look out for", "who competes with you for gear"].every((s) => text.toLowerCase().includes(s)));
   check("the class icon and a spell icon head the result", document.querySelectorAll(".hero-icons .wow-icon").length === 2, document.querySelectorAll(".hero-icons .wow-icon").length);
@@ -196,7 +196,7 @@
   const altLinks = [...document.querySelectorAll(".alt-link")];
   check("both 'also in the stars' cards link to a specialization page", altLinks.length === 2 && altLinks.every((a) => /^#\/specs\/[a-z]+\/[a-z_]+$/.test(a.getAttribute("href"))), altLinks.map((a) => a.getAttribute("href")).join(","));
   const share = document.getElementById("share-text");
-  check("the share blurb names the class and specialization, the numbers and a link", !!share && /Druid – Feral Combat/.test(share.value) && /Class scores: Druid \+[\d.]+/.test(share.value) && /https?:\/\//.test(share.value), share?.value);
+  check("the share blurb names the class and specialization, the numbers and a link", !!share && /Feral Combat Druid/.test(share.value) && /Class scores: Druid \+[\d.]+/.test(share.value) && /https?:\/\//.test(share.value), share?.value);
   check("a button copies the blurb", !!document.getElementById("share-copy"));
   const onResult = document.getElementById("view").innerText;
   check("the build shows neither 'how this was put together' nor its source", !/How this was put together/i.test(onResult) && !/Source:/.test(onResult));

@@ -38,7 +38,7 @@ export function buildCard(build, spec, classId, yours = true) {
     return h("div", { class: "card" }, h("h3", {}, yours ? "Your build" : "Build"), h("p", { class: "muted" }, `No build has been configured for ${spec.name} yet.`));
   }
   const kind = { verified: "ok", draft: "warn", unverified: "warn", pending: "info" }[build.status] || "";
-  const label = { verified: "Verified", draft: "Draft - not verified", unverified: "Unverified", pending: "Allocation pending" }[build.status] || build.status;
+  const label = { verified: "Verified", draft: "Draft (not verified)", unverified: "Unverified", pending: "Allocation pending" }[build.status] || build.status;
   const names = Object.fromEntries(build.talents.map((t) => [t.talent_id, t.name || t.talent_id]));
   const hasAlloc = build.talents.length > 0;
   const trees = hasAlloc ? talentTrees(build, classId, spec.id) : null;

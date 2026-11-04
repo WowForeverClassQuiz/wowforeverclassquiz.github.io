@@ -20,9 +20,9 @@ export const SHARE_FIELDS = [
 
 /** The template used until an administrator changes it. Keep in step with DEFAULT_SHARE_TEMPLATE in app/models.py. */
 export const DEFAULT_SHARE_TEMPLATE = [
-  "The stars say I'm a {class} – {spec}! ✦",
-  "Class scores: {class_scores} ({confidence}, {questions} questions; relative scores, not percentages).",
-  "Also in the stars: {also_class} – {also_spec}; closest in {class}: {next_spec}.",
+  "The stars say I'm a {spec} {class}! ✦",
+  "Class scores: {class_scores} ({confidence}, {questions} questions; relative scores).",
+  "Also in the stars: {also_spec} {also_class}. Closest in {class}: {next_spec}.",
   "Find yours on the Forever Character Oracle: {link}",
 ].join("\n");
 

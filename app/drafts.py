@@ -2,7 +2,7 @@
 
 Neither was read from the game client, so the catalog is flagged ``data_status: "draft"`` and every build ``draft``;
 the validator refuses to mark a build verified against draft data. They ship so every result can show a best-guess build
-(clearly labelled) instead of "allocation pending". See catalog/RECONCILIATION.md for where the data came from.
+(clearly labelled), so no result has to say "allocation pending". See catalog/RECONCILIATION.md for where the data came from.
 """
 from __future__ import annotations
 

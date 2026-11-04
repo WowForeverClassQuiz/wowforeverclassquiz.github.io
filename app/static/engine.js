@@ -313,7 +313,7 @@ export function evaluate(c, answers, { allowPartial = false, length = "long" } =
       strong_margin: strongMargin,
       moderate_margin: moderateMargin,
       note: "Heuristic descriptor based on the gap between the top two class scores "
-        + "and configurable margins. It is not a statistical estimate or a probability.",
+        + "and configurable margins. The probability field comes from the confidence model.",
     },
   };
   if (primaryPick.build) result.build = primaryPick.build;
@@ -342,8 +342,8 @@ export function evaluate(c, answers, { allowPartial = false, length = "long" } =
       spec_weight_multiplier: c.spec_multiplier,
       quiz_length: length,
       scores_are_probabilities: false,
-      note: "Scores are relative compatibility indicators, not probabilities. "
-        + "Confidence labels are heuristics, not statistical estimates.",
+      note: "Scores are relative compatibility indicators on a scale with no fixed maximum. "
+        + "Confidence labels are heuristics based on the gap between the top two class scores.",
     },
   };
 }

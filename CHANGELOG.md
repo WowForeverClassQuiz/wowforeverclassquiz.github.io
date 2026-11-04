@@ -1,7 +1,13 @@
 # Changelog
 
 The version shown on the first page is `APP_VERSION` in [app/version.py](app/version.py). The scoring rules carry their own
-`algorithm_version` (currently 1.3.0), which changes only when the arithmetic or the seed weights do.
+`algorithm_version` (currently 1.4.0), which changes only when the arithmetic or the seed weights do.
+
+## 1.6.1 · 2026-11-03
+
+* Reworded text throughout the quiz, the result page, the share blurb, the notes the API returns, the README and the maths document. The contrast phrasing, the slash alternatives and the dash separators are gone.
+* Specializations now read the way players say them, as in "Feral Combat Druid", and a role such as "Melee Damage or Tank" uses a word where it had a slash.
+* The default share blurb changed with the wording. A share format an administrator saved earlier is left as it was.
 
 ## 1.6.0 · 2026-11-03
 
@@ -14,7 +20,7 @@ The version shown on the first page is `APP_VERSION` in [app/version.py](app/ver
 ## 1.5.0 · 2026-11-03
 
 * Class pages and specialization pages: what each class does, the traits that define each specialization, its role and gear, and its build.
-  Open them from the first page, the "Also in the stars" cards or the Classes link; page through with Previous/Next or the arrow keys.
+  Open them from the first page, the "Also in the stars" cards or the Classes link; page through with Previous and Next or the arrow keys.
 * Share your result: a short blurb (class, specialization, your class scores, a link to take the quiz) you can copy with one click.
 * Every class is now chosen equally often under random answers, at every quiz length (within about 0.3 percentage points).
 * Question 3 became a "spend six points" question.

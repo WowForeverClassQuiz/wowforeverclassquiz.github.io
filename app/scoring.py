@@ -102,7 +102,7 @@ FORMULAS = {
     "pick_two_response": "pick-two response 'a+c' carries the sum of the two chosen answers' weights; the baseline is the mean over all six pairs",
     "ranking_response": "ranking response 'c>a>d>b' weights the answers 1.5, 1, 0.5 and 0 from best to last; the baseline is the mean over all 24 orderings",
     "allocation_response": "allocation response '2-0-3-1' weights each answer by its points / 3 (six points in all); the baseline is the mean over all 84 splits",
-    "interpretation": "Scores are relative compatibility indicators, not probabilities.",
+    "interpretation": "Scores are relative compatibility indicators on a scale with no fixed maximum.",
 }
 
 
@@ -674,7 +674,7 @@ def evaluate(
         moderate_margin=moderate_margin,
         note=(
             "Heuristic descriptor based on the gap between the top two class scores "
-            "and configurable margins. It is not a statistical estimate or a probability."
+            "and configurable margins. The probability field comes from the confidence model."
         ),
     )
 
@@ -1028,7 +1028,7 @@ def expand_question(config: Config, question: Question) -> QuestionExpansion:
     """List every possible response to ``question`` with its raw weights and baseline-subtracted contributions.
 
     This is the single source of truth for how a question (including scale and pick-two types) turns into numbers;
-    the administrative editor calls it instead of re-implementing the arithmetic.
+    the administrative editor calls it to reuse the same arithmetic.
     """
     tmp = config.model_copy(update={"questions": [question.model_copy(update={"enabled": True})]})
     c = compile_config(tmp)

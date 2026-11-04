@@ -71,8 +71,8 @@ function drawResult(ev) {
 
   out.append(h("div", { class: "card" },
     h("div", { class: "stats" },
-      stat(`${p.primary_class.name} – ${p.primary_specialization.name}`, "primary result"),
-      stat(`${ev.alternatives.alternative_class.name} – ${ev.alternatives.alternative_specialization.name}`, "alternative class"),
+      stat(`${p.primary_specialization.name} ${p.primary_class.name}`, "primary result"),
+      stat(`${ev.alternatives.alternative_specialization.name} ${ev.alternatives.alternative_class.name}`, "alternative class"),
       stat(ev.alternatives.second_specialization_in_primary_class.name, `second specialization in ${p.primary_class.name}`),
       stat(`${p.confidence.label} (${fmt(p.confidence.class_gap)})`, "gap between top two classes (heuristic)"),
       stat(`r${m.config_revision}`, "configuration revision"),
@@ -149,7 +149,7 @@ function contributionCard(ev) {
         h("td", { class: `num ${cellClass(q.leader_margin_effect)}` }, signed(q.leader_margin_effect))))),
       h("tfoot", {}, h("tr", {}, h("td", { colspan: 2 }, "Total"), order.map((c) => h("td", { class: "num" }, signed(totals[c.id]))), h("td", {}, ""),
         h("td", { class: "num" }, signed(ex.questions.reduce((s, q) => s + q.leader_margin_effect, 0))))))),
-    h("p", { class: "bar-note" }, ok ? "✓ Column totals equal the class scores in the ranking above." : "⚠ Column totals differ from the ranking - this should never happen."));
+    h("p", { class: "bar-note" }, ok ? "✓ Column totals equal the class scores in the ranking above." : "⚠ Column totals differ from the ranking. This should never happen."));
 }
 
 function selectQuestion(ev, id) { selQuestion = selQuestion === id ? null : id; drawResult(ev); if (selQuestion) document.getElementById("qdetail")?.scrollIntoView({ behavior: "smooth", block: "nearest" }); }
@@ -164,7 +164,7 @@ function drawQuestionDetail(ev) {
     h("thead", {}, h("tr", {}, h("th", {}, label), h("th", { class: "num" }, "Raw weight"), h("th", { class: "num" }, "Baseline (mean)"), h("th", { class: "num" }, "Adjusted"))),
     h("tbody", {}, Object.entries(cells).map(([id, c]) => h("tr", { class: id === selClass ? "sel" : "" }, h("td", {}, names[id] || id), h("td", { class: "num" }, fmt(c.raw)), h("td", { class: "num" }, fmt(c.baseline, 3)), h("td", { class: `num ${cellClass(c.adjusted)}` }, signed(c.adjusted, 3)))))));
   host.append(h("div", { class: "card" },
-    h("div", { class: "row between" }, h("h3", { style: { margin: 0 } }, `${q.question_id.toUpperCase()} – answer ${q.answer_id.toUpperCase()}`),
+    h("div", { class: "row between" }, h("h3", { style: { margin: 0 } }, `${q.question_id.toUpperCase()}, answer ${q.answer_id.toUpperCase()}`),
       h("a", { class: "btn small", href: "#/admin/questions", onclick: () => { state.editorQuestion = q.question_id; } }, "Edit these weights")),
     h("p", { class: "muted" }, q.question_text), h("p", {}, h("b", {}, "Chosen: "), q.answer_text),
     h("div", { class: "grid two" }, h("div", {}, h("h4", {}, "Classes"), tbl(q.class_contributions, "Class")), h("div", {}, h("h4", {}, "Traits"), tbl(q.trait_contributions, "Trait"))),
@@ -177,7 +177,7 @@ function counterfactualCard(ev) {
   const cfs = ev.explanation.counterfactuals || [];
   const changing = cfs.filter((c) => c.specialization_changed);
   const row = (c) => h("tr", {}, h("td", { class: "mono" }, c.question_id), h("td", { class: "wrap" }, `${c.answer_id.toUpperCase()}. ${c.answer_text}`),
-    h("td", {}, `${c.primary_class_name} – ${c.primary_specialization_name}`), h("td", {}, c.class_changed ? badge("class changes", "bad") : c.specialization_changed ? badge("specialization changes", "warn") : badge("same", "")), h("td", { class: "num" }, fmt(c.class_gap)));
+    h("td", {}, `${c.primary_specialization_name} ${c.primary_class_name}`), h("td", {}, c.class_changed ? badge("class changes", "bad") : c.specialization_changed ? badge("specialization changes", "warn") : badge("same", "")), h("td", { class: "num" }, fmt(c.class_gap)));
   const table = (list) => h("div", { class: "table-wrap" }, h("table", {}, h("thead", {}, h("tr", {}, ["Q", "If this answer were chosen instead", "Result", "Effect", "Gap"].map((t) => h("th", {}, t)))), h("tbody", {}, list.map(row))));
   return h("div", { class: "card" },
     h("h3", {}, "What-if: choosing a different answer"),

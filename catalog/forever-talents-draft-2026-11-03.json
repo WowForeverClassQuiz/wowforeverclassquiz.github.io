@@ -5,7 +5,7 @@
  "retrieved_at": "2026-11-03",
  "source_updated": "2026-11-02",
  "data_status": "draft",
- "notes": "DRAFT assembled by hand on 2026-11-03; NOT read from the game client. Base: GuildOrder WoW Forever talent pages (reviewed October 2026). Changes: Blizzard 'WoW Forever Beta Development Notes - Updated November 2'. Limits: talent-to-talent prerequisites are only those the notes state (the source shows none); 'column' is list order, not the real grid position; percentage-only changes are not modelled; tree contents were relayed through a page-summarising tool, so transcription errors are possible. Builds can be checked against this data but can never be marked verified.",
+ "notes": "DRAFT assembled by hand on 2026-11-03; NOT read from the game client. Base: GuildOrder WoW Forever talent pages (reviewed October 2026). Changes: Blizzard 'WoW Forever Beta Development Notes - Updated November 2'. Limits: talent-to-talent prerequisites are only those the notes state (the source shows none); 'column' is list order and gives no real grid position; percentage-only changes are not modelled; tree contents were relayed through a page-summarising tool, so transcription errors are possible. Builds can be checked against this data but can never be marked verified.",
  "points_per_tier": 5,
  "classes": [
   {

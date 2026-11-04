@@ -32,7 +32,7 @@ export async function render(container) {
           h("td", {}, h("b", {}, `r${e.revision}`), e.revision === cfg.revision ? " " : "", e.revision === cfg.revision ? badge("current", "ok") : null),
           h("td", {}, e.created_at.replace("T", " ").replace("+00:00", "")), h("td", {}, badge(e.change_type, "")),
           h("td", { class: "wrap" }, e.change_description,
-            e.change_detail && e.change_detail.before ? h("details", { style: { marginTop: "6px" } }, h("summary", {}, "Before / after"), diff(e.change_detail)) : null),
+            e.change_detail && e.change_detail.before ? h("details", { style: { marginTop: "6px" } }, h("summary", {}, "Before and after"), diff(e.change_detail)) : null),
           h("td", {}, e.revision === cfg.revision ? null : h("button", { class: "btn small", type: "button", onclick: () => restore(e.revision) }, "Restore"))))))),
       history.length >= historyLimit ? h("div", { class: "row", style: { marginTop: "10px" } }, h("button", { class: "btn small", type: "button", onclick: () => { historyLimit += 50; render(root); } }, "Show older revisions")) : null),
   );

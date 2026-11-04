@@ -51,7 +51,7 @@ def test_the_public_quiz_lists_the_lengths_and_defaults_to_confidence_mode(clien
     assert body["question_count"] == 30 and len(body["questions"]) == 30 and body["default_length"] == "adaptive"
     assert [l["id"] for l in body["lengths"]] == ["adaptive", "short", "medium", "long"]
     assert all(set(l["question_ids"]) <= {q["id"] for q in body["questions"]} for l in body["lengths"])
-    assert not any("min_length" in q for q in body["questions"])   # tier assignments are configuration, not participant data
+    assert not any("min_length" in q for q in body["questions"])   # tier assignments are configuration and stay hidden from participants
 
 
 @pytest.mark.parametrize("length,count", [("short", 10), ("medium", 20), ("long", 30)])

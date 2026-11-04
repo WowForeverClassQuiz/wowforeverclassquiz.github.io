@@ -50,7 +50,8 @@ def test_every_answer_is_in_the_weights_appendix(text):
     cfg = build_default_config()
     for q in cfg.enabled_questions():
         for a in q.answers:
-            assert f"{q.id.upper()}/{a.id}" in text, (q.id, a.id)
+            label = a.id.upper() if len(a.id) == 1 else a.id
+            assert f"{q.id.upper()} {label}" in text, (q.id, a.id)
 
 
 def test_the_committed_pdf_exists_and_is_current_enough_to_describe_this_version():

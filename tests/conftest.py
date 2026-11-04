@@ -15,8 +15,8 @@ from app.main import create_app
 from app.scoring import response_coefficients
 from app.seed import build_default_config
 
-#: A fixed, complete 30-answer set. Under the seed configuration it yields Druid / Feral Combat. It is a test
-#: fixture reached by search, not a realistic persona. (Two questions are pick-two, three are rankings and two are allocations, so their answers are pairs, orderings and splits.)
+#: A fixed, complete 30-answer set. Under the seed configuration it yields a Feral Combat Druid. It is a test
+#: fixture reached by search; it does not describe a realistic persona. (Two questions are pick-two, three are rankings and two are allocations, so their answers are pairs, orderings and splits.)
 DRUID_ANSWERS = {
     "q01": "a", "q02": "c", "q03": "0-0-6-0", "q04": "a", "q05": "c", "q06": "d", "q07": "b>c>a>d", "q08": "d", "q09": "3-0-0-3", "q10": "a",
     "q11": "a>c>b>d", "q12": "b", "q13": "d", "q14": "c", "q15": "3-3-0-0", "q16": "c", "q17": "6", "q18": "1", "q19": "10", "q20": "10",

@@ -4,7 +4,7 @@ The static site has no API. Its browser code (``static/engine.js``) scores answe
 exported here, so the numbers a visitor sees are the numbers the Python engine would produce (``tests/test_static_parity.py``
 checks this against the live API).
 
-Raw weights and per-question baselines are exported rather than the baseline-subtracted deltas: the browser subtracts them
+The export carries raw weights and per-question baselines. The browser subtracts them
 with the same IEEE arithmetic Python used, which keeps the two engines bit-for-bit identical.
 
 Privacy note: unlike the API, this data *does* contain every scoring weight, because the browser needs them to score.

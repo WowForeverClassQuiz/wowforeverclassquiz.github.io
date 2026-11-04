@@ -454,7 +454,7 @@ def test_confidence_labels_follow_configured_margins(config, druid_answers):
     cfg = config.model_copy(deep=True)
     cfg.scoring.confidence_margins.strong, cfg.scoring.confidence_margins.moderate = gap + 1, gap + 0.5
     assert evaluate(cfg, druid_answers).result.confidence.label == "Close call"
-    assert "not a statistical" in ev.result.confidence.note
+    assert ev.result.confidence.note.startswith("Heuristic descriptor")
     assert ev.metadata.scores_are_probabilities is False
 
 
@@ -503,4 +503,4 @@ def test_batch_simulation_is_reproducible_and_mean_scores_are_near_zero(config):
     assert sum(r.frequency for r in a.baseline.class_frequencies) == pytest.approx(1.0)
     # The normalization makes every class's expected score under uniform random answers exactly zero.
     assert all(abs(r.mean_score) < 0.25 for r in a.baseline.class_frequencies)
-    assert a.simulated is None and "not empirical" in a.note
+    assert a.simulated is None and "diagnose" in a.note

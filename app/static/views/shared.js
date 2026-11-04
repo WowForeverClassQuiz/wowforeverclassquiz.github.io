@@ -64,7 +64,7 @@ export function answerPicker(cfg, answers, onChange) {
 }
 
 export function resultLine(primary) {
-  return `${primary.class_name} – ${primary.specialization_name}`;
+  return `${primary.specialization_name} ${primary.class_name}`;
 }
 
 /** Saved vs simulated outcome for a /simulate response. */
@@ -93,10 +93,10 @@ export function comparisonView(sim) {
       h("tbody", {}, sim.class_differences.map((d) => h("tr", {}, h("td", {}, d.name), h("td", { class: "num" }, signed(d.original)), h("td", { class: "num" }, signed(d.simulated)),
         h("td", { class: `num ${d.difference > 0 ? "pos" : d.difference < 0 ? "neg" : "zero"}` }, signed(d.difference))))))),
     h("div", {},
-      h("h4", {}, `Specializations (${[...specKeys].map((k) => sim.specialization_differences.find((s) => s.class_id === k)?.class_id).join(" / ")})`),
+      h("h4", {}, `Specializations (${[...specKeys].map((k) => sim.specialization_differences.find((s) => s.class_id === k)?.class_id).join(", ")})`),
       h("div", { class: "table-wrap" }, h("table", {},
         h("thead", {}, h("tr", {}, ["Specialization", "Saved", "Simulated", "Difference"].map((t, i) => h("th", { class: i ? "num" : "" }, t)))),
-        h("tbody", {}, specRows.map((s) => h("tr", {}, h("td", {}, `${s.class_id} / ${s.name}`), h("td", { class: "num" }, signed(s.original)), h("td", { class: "num" }, signed(s.simulated)),
+        h("tbody", {}, specRows.map((s) => h("tr", {}, h("td", {}, `${s.class_id}: ${s.name}`), h("td", { class: "num" }, signed(s.original)), h("td", { class: "num" }, signed(s.simulated)),
           h("td", { class: `num ${s.difference > 0 ? "pos" : s.difference < 0 ? "neg" : "zero"}` }, signed(s.difference)))))))),
     h("div", {},
       h("h4", {}, "Questions that most influenced the result"),

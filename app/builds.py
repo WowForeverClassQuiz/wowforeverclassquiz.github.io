@@ -239,7 +239,7 @@ def describe_build(build: Build, config: Config, with_validation: bool = True, w
     elif build.status == "pending" or not build.allocations:
         note = "Talent allocation pending: it has not yet been verified against current World of Warcraft: Forever talent data."
     else:
-        note = "Provisional build: not verified against current World of Warcraft: Forever talent data. Treat it as a draft, not a validated allocation."
+        note = "Provisional build that is not verified against current World of Warcraft: Forever talent data. Treat it as a draft."
 
     data = build.model_dump()
     return BuildDetail(

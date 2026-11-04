@@ -9,7 +9,7 @@ from typing import Mapping, Optional
 
 #: Version of the application as a whole (questions, scoring, pages). See CHANGELOG.md. The scoring rules have their own
 #: ``algorithm_version`` (app/seed.py).
-APP_VERSION = "1.6.0"
+APP_VERSION = "1.6.1"
 DEVELOPER = "Anibru"
 DEVELOPER_URL = "https://github.com/Anibru"
 
@@ -28,7 +28,7 @@ def build_info(now: Optional[datetime] = None, env: Optional[Mapping[str, str]] 
     """Version, build number, commit and date of this build.
 
     The build number is the CI run number when there is one (GitHub Actions sets GITHUB_RUN_NUMBER), otherwise the number
-    of commits in the repository; the commit is the short hash. Either is "dev" / "unknown" when there is no git history.
+    of commits in the repository; the commit is the short hash. Without git history they read "dev" and "unknown".
     """
     env = os.environ if env is None else env
     now = now or datetime.now(timezone.utc)

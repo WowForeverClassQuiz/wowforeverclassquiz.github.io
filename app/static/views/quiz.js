@@ -97,7 +97,7 @@ function credit() {
     when ? ` · ${when}` : "");
 }
 
-/** Short / medium / long: how many questions to answer. Nothing is chosen for you except the middle one when it exists. */
+/** Short, medium or long: how many questions to answer. Nothing is chosen for you except the middle one when it exists. */
 function lengthPicker() {
   const ls = lengths();
   if (ls.length < 2) return null;
@@ -315,7 +315,7 @@ function rankingControl(q, groupId) {
     h("div", { class: "answers", role: "group", "aria-labelledby": groupId }, q.answers.map((a) => {
       const rank = ranked.indexOf(a.id) + 1;
       return h("label", { class: "answer ranking" },
-        h("input", { type: "checkbox", value: a.id, checked: rank > 0, "aria-label": `${a.text}${rank ? `, ranked ${rank}` : ", not ranked yet"}`, onchange: () => tap(a.id) }),
+        h("input", { type: "checkbox", value: a.id, checked: rank > 0, "aria-label": `${a.text}${rank ? `, ranked ${rank}` : ", unranked"}`, onchange: () => tap(a.id) }),
         h("span", { class: "key", "aria-hidden": "true" }, rank ? String(rank) : "\u2013"),
         h("span", {}, a.text));
     })),
@@ -470,12 +470,12 @@ function shareCard(r) {
 function resultText(r) {
   const p = r.result, a = r.alternatives;
   const lines = [
-    `${state.quiz.title} - Forever Character Oracle`,
+    `${state.quiz.title}: Forever Character Oracle`,
     "",
-    `Recommended: ${p.primary_class.name} - ${p.primary_specialization.name} (${roleLabel(p.primary_specialization.role)})`,
-    `Reading strength: ${p.confidence.label} (heuristic, not a probability), from ${r.metadata.total_questions} questions`,
+    `Recommended: ${p.primary_specialization.name} ${p.primary_class.name} (${roleLabel(p.primary_specialization.role)})`,
+    `Reading strength: ${p.confidence.label} (a heuristic based on the class gap), from ${r.metadata.total_questions} questions`,
     p.build ? `Build: ${p.build.name} [${p.build.status}]${p.build.tree_distribution_text ? ` ${p.build.tree_distribution_text}` : ""}` : "",
-    `Also in the stars: ${a.alternative_class.name} - ${a.alternative_specialization.name}; within ${p.primary_class.name}, ${a.second_specialization_in_primary_class.name}`,
+    `Also in the stars: ${a.alternative_specialization.name} ${a.alternative_class.name}; closest in ${p.primary_class.name}: ${a.second_specialization_in_primary_class.name}`,
     "",
     p.personality_interpretation,
     "",
@@ -483,7 +483,7 @@ function resultText(r) {
     "",
     p.class_overview ? `What the ${p.primary_class.name} does: ${p.class_overview} ${p.primary_specialization.name}: ${p.specialization_overview}` : "",
     "",
-    "Class scores (relative compatibility, not probabilities):",
+    "Class scores (relative compatibility):",
     ...r.rankings.classes.map((c) => `  ${c.rank}. ${c.name} ${signed(c.score)}`),
     "",
     `Configuration revision ${r.metadata.config_revision}, algorithm ${r.metadata.algorithm_version}`,
@@ -521,7 +521,7 @@ function drawResult() {
         h("h3", {}, "Also in the stars"),
         h("a", { class: "alt-link", href: `#/specs/${alt.alternative_class.id}/${alt.alternative_specialization.id}` },
           h("span", { class: "alt-line" }, classIcon(alt.alternative_class.id, 36, alt.alternative_class.name), specIcon(alt.alternative_class.id, alt.alternative_specialization.id, 36),
-            h("span", {}, h("b", {}, alt.alternative_class.name), ` – ${alt.alternative_specialization.name}`)),
+            h("span", {}, h("b", {}, alt.alternative_specialization.name), ` ${alt.alternative_class.name}`)),
           h("span", { class: "muted" }, alt.alternative_specialization.description),
           h("span", { class: "alt-go" }, "See this specialization →")),
         h("a", { class: "alt-link", href: `#/specs/${p.primary_class.id}/${alt.second_specialization_in_primary_class.id}` },
@@ -532,7 +532,7 @@ function drawResult() {
         h("a", { class: "browse-link", href: "#/specs" }, "Browse every specialization →")),
       h("div", { class: "card" },
         h("h3", {}, "The numbers"),
-        h("p", { class: "muted", style: { fontSize: "0.88rem" } }, "Relative compatibility, not probabilities. A longer bar to the right means a closer fit than the average answer pattern."),
+        h("p", { class: "muted", style: { fontSize: "0.88rem" } }, "Relative compatibility scores. A longer bar to the right means a closer fit than the average answer pattern."),
         barChart(r.rankings.classes.map((c) => ({ id: c.id, label: c.name, value: c.score, icon: classIcon(c.id, 18, c.name) })), { leadId: p.primary_class.id }),
         chartLegend()),
     ),

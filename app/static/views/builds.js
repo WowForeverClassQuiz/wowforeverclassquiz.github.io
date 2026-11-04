@@ -146,7 +146,7 @@ function newBuild() {
   const taken = new Set(cfg.builds.map((b) => b.id));
   let id = slug(`${clsId}-${specId}-new`), n = 1;
   while (taken.has(id)) id = slug(`${clsId}-${specId}-new-${++n}`);
-  draft = toDraft({ id, class_id: clsId, specialization_id: specId, name: `${spec.name} — new build`, role: spec.role.split("_or_")[0], purpose: "leveling_pve", level: 60, total_points: 51,
+  draft = toDraft({ id, class_id: clsId, specialization_id: specId, name: `${spec.name}: new build`, role: spec.role.split("_or_")[0], purpose: "leveling_pve", level: 60, total_points: 51,
     allocations: {}, leveling_order: [], combat_priorities: [], equipment_notes: [], professions: [], source: "", source_url: "", calculator_url: "", verified_at: null,
     client_version: catalog ? catalog.client_version : "", status: "draft", is_default: list.length === 0, notes: "" });
   isNew = true; dirty = true;

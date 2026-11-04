@@ -48,7 +48,7 @@ async function save(key, request, okMessage) {
   }
 }
 
-/** Standard footer for a draft card: Save / Discard (+ optional extras) with live dirty state. */
+/** Standard footer for a draft card: Save and Discard (plus optional extras) with live dirty state. */
 function actions(key, card, onSave, extra = []) {
   const saveBtn = h("button", { class: "btn small primary", type: "button", onclick: onSave }, "Save");
   const discard = h("button", { class: "btn small", type: "button", onclick: () => { drafts.delete(key); draw(); } }, "Discard");

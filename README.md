@@ -1,4 +1,4 @@
-# World of Warcraft: Forever - Character Oracle
+# World of Warcraft: Forever Character Oracle
 
 A personality quiz that recommends a **class, specialization and talent build** for
 *World of Warcraft: Forever*. By default it runs in **confidence mode**: it asks the most informative questions one at a time and stops once it is 90% sure of one
@@ -22,15 +22,15 @@ The scoring engine, API and interface are complete and tested. **The talent data
 
 * **Every result shows a build**, even though none is verified: the draft catalog and 27 draft builds ship with the application
   ([app/drafts.py](app/drafts.py)) and are part of the seed, so a new database and the published website both have them. Each build is
-  labelled "Draft - not verified", the page says it **may not match the current World of Warcraft: Forever talent trees**, and it gives the
+  labelled "Draft (not verified)", the page says it **may not match the current World of Warcraft: Forever talent trees**, and it gives the
   date the talent tree data was last updated (**November 2, 2026**, the date of Blizzard's Beta Development Notes it reflects; the data was
   compiled on November 3, 2026).
 * The build is drawn as the class's **three talent trees**, laid out like the in-game talent window: rows by tier, a rank badge on every
   talent (`2/5`), unspent talents dimmed, maxed talents green, with the tree of your specialization highlighted. The source data gives each
   talent's row and ranks but not its exact column, so a talent's position *within* its row is approximate; the page says so.
 * Each result also carries a **role and gear guide** for the specialization ([app/spec_guides.py](app/spec_guides.py)): its role in dungeons and in
-  raids, what to look out for on gear, and which specializations compete with it for similar gear. This is *general guidance* for how those roles and
-  gear types work in Classic-style World of Warcraft, written for this project; it was not read from Forever's item list and says so on the page.
+  raids, what to look out for on gear, and which specializations compete with it for similar gear. It is general guidance on how those roles and
+  gear types work in Classic-style World of Warcraft, written for this project. It was not read from Forever's item list, and the page says so.
 * The application ships **no data read from the World of Warcraft: Forever client**. [catalog/forever-talents-draft-2026-11-03.json](catalog/forever-talents-draft-2026-11-03.json)
   is a **draft catalog of all 27 trees (468 talents)**, assembled on 2026-11-03 from GuildOrder's Forever talent pages (reviewed October 2026) plus
   Blizzard's *Beta Development Notes, updated November 2*, which lists changes only. `catalog/build_forever_draft.py` rebuilds it and checks
@@ -39,9 +39,9 @@ The scoring engine, API and interface are complete and tested. **The talent data
 * Draft data is flagged `data_status: "draft"`. Allocations are validated against it (point total, ranks, row gates, and the
   prerequisites the notes state), but **the server refuses to mark any build `verified` against draft data**.
 * Known gaps in the draft: the source shows no talent-to-talent prerequisites (only 6 are recorded, from the notes); `column`
-  is list order, not the real grid; percentage-only changes are not modelled; the pages were read through a summarising
+  is list order and gives no real grid position; percentage-only changes are not modelled; the pages were read through a summarising
   fetch tool; and a few notes entries are ambiguous (listed in the ledger). Replace the draft with a client export when you have one.
-* [catalog/forever-builds-draft-2026-11-03.json](catalog/forever-builds-draft-2026-11-03.json) holds **27 best-guess leveling / general-PvE
+* [catalog/forever-builds-draft-2026-11-03.json](catalog/forever-builds-draft-2026-11-03.json) holds **27 best-guess leveling and general-PvE
   builds, one per specialization**, each a full 51-point allocation with a legal point-by-point leveling order. They are in the seed already; to
   add them to a database whose configuration you have edited (it writes one revision and backs up the old configuration first):
 
@@ -54,7 +54,7 @@ The scoring engine, API and interface are complete and tested. **The talent data
   extrapolation and the least trustworthy. RankedBoost still uses some pre-patch talents, so every build was remapped onto the new
   trees (removed talents dropped, ranks capped, moved talents taken from their new tree). Reddit and other forums could not be read by the
   tools I had, so no community consensus is reflected beyond RankedBoost and the guide sites. Each build is `draft`, is checked as *legal* on the
-  draft catalog, and says so on its record; that proves legality in unverified data, not quality.
+  draft catalog, and says so on its record; that shows the allocation is legal in unverified data and says nothing about its quality.
 * The test suite also uses a small *synthetic* catalog to exercise the validator. Its names are invented and it is never loaded
   by the application.
 
@@ -65,7 +65,7 @@ load, a coloured badge takes its place. To host them yourself or drop them, chan
 
 ## Confidence mode, and the maths
 
-**Confidence mode** (the default) works like a twenty-questions game. After each answer the Oracle works out how likely each of the 27 class/specialization pairs is,
+**Confidence mode** (the default) works like a twenty-questions game. After each answer the Oracle works out how likely each of the 27 pairs of class and specialization is,
 picks the unanswered question that will tell it the most, and stops as soon as the specialization the scoring currently recommends has reached **90%** (after at least 10
 questions; it never asks more than 30). A certainty meter shows how sure it is while you answer, and after the minimum you can also *Reveal now* at whatever certainty
 it has reached. The result then says which mode it was, how many questions it rests on and the model's confidence ("93% sure"). Simulated respondents need about 16
@@ -73,8 +73,8 @@ questions on average; people who answer at random run to the limit and get a low
 
 * **How the probability is defined.** A logit choice model: a person of each type is assumed to pick responses with probability proportional to exp(their contribution
   to that type's scores). Bayes' rule over the 27 types then gives the probabilities; the quiz's own class and specialization scores *are* the evidence in it. The
-  "probabilities" are exact inside the model, and the model is an assumption about how people answer (its two sharpness constants say how consistently): treat
-  "90% sure" as "the answers are as consistent with one specialization as the model requires", not as a measured accuracy.
+  "probabilities" are exact inside the model, and the model is an assumption about how people answer (its two sharpness constants say how consistently). Read
+  "90% sure" as "the answers are as consistent with one specialization as the model requires"; no study of real respondents backs the figure.
 * **Settings.** Admin > Profiles & Settings: whether the mode is offered, the minimum and maximum number of questions, the confidence threshold and the two sharpness
   values. The browser edition runs the same code as the server (a test compares every step of whole question paths), and `POST /api/v1/adaptive/next` is the API
   behind it.
@@ -89,7 +89,7 @@ questions on average; people who answer at random run to the limit and get a low
 * **Class pages and specialization pages.** The first page has a *Browse the classes and specializations* button (and the navigation bar a *Classes* link). It opens an
   index of the nine classes; each class has its own page (what it does, its three specializations), and each specialization has a page: the **traits that
   define it** (primary, secondary and so on, with how much each counts and, once you have a result, your own score in each), what it does, its role and gear
-  guide and its build. Page through with *Previous/Next* or the left and right arrow keys. The **Also in the stars** cards on a result open the page of the
+  guide and its build. Page through with *Previous* and *Next* or the left and right arrow keys. The **Also in the stars** cards on a result open the page of the
   runner-up specialization and of your next-closest specialization in your class. Pages are served by `GET /api/v1/specializations/{class}/{spec}` and are
   carried in the static site's data.
 * **Share your result.** The result page has a *Share your result* box: a short blurb with your class, specialization, your three best class scores and a link
@@ -199,8 +199,8 @@ the build, or have the host run `python tools/build_static.py --out site` and pu
 
 ## How the recommendation is calculated
 
-Scores are **relative compatibility indicators, not probabilities**. "Strong lean / Clear lean /
-Close call" is a heuristic based on the gap between the top two classes, not a statistical estimate.
+Scores are **relative compatibility indicators** on a scale with no fixed maximum. The label ("Strong lean", "Clear lean" or
+"Close call") is a heuristic based on the gap between the top two classes. The "90% sure" figure comes from the separate confidence model described above.
 
 1. **Class score.** Each answer awards 2 points to its primary class and 1 to its secondary class.
    Because classes appear in different numbers of answers, each question is normalized against the average over
@@ -218,14 +218,14 @@ Close call" is a heuristic based on the gap between the top two classes, not a s
    *allocation* (spend six points across four items; an item given `p` points counts `p / 3` times its weights; 84 possible splits) and
    *scale* (rate a statement 1-10). A scale question defines two poles, **agree** and **disagree**.
    A rating `r` gives `s = (r - 5.5) / 4.5`, from -1 to +1, and the response carries `max(s, 0) x agree + max(-s, 0) x disagree`.
-   So a strong "disagree" counts toward the disagree pole instead of counting for nothing, and a neutral respondent
+   So a strong "disagree" counts toward the disagree pole, and a neutral respondent
    contributes about zero, because the baseline is again the mean over all ten ratings. In every type the baseline is the mean over **all
    possible responses**, so no question can favour a class on average. Only two questions are pick-two; the rest of the "choose some of these"
    questions are rankings and point splits, which carry more information per question.
 2. **Trait score.** The same normalization over the twelve personality traits gives `T_t`.
    Raw counts (how often a trait appeared) are reported separately.
 3. **Specialization score.** `P_s = sum of multiplier x T_trait + m x sum of delta_spec(q, s)`: the trait profile
-   (originally 1.5 / 1.0 / 0.45 for its primary, secondary and tertiary trait; any number of traits is allowed) plus
+   (originally 1.5, 1.0 and 0.45 for its primary, secondary and tertiary trait; any number of traits is allowed) plus
    the **direct specialization weights** some answers carry (keys like `warrior/fury`, normalized exactly like class
    weights). `m` is `scoring.spec_weight_multiplier`, 5.0 in the seed. Questions without direct weights contribute
    nothing to the second term. Only the winning class's specializations decide the primary result.
@@ -251,7 +251,7 @@ explicitly seeded batch diagnostic).
 Pick the lightest level that does the job.
 
 1. **In the interface (no code).**
-   * *Question Editor*: change answer text and class/trait weights. Edits are drafts until you press **Save**;
+   * *Question Editor*: change answer text and class and trait weights. Edits are drafts until you press **Save**;
      **Preview impact** shows what a draft would do to your hypothetical answers and across 3,000 random answer sets;
      **Restore original weights** reloads the seed values as a draft. A live table shows each question's
      baseline and the contribution of every answer.
@@ -278,7 +278,7 @@ and allocation questions exactly 4, and scale questions exactly the two answers 
 The requirement: **every class equally likely to be chosen, every specialization the recommendation at least 20% of the time within its own
 class, and all of it at every quiz length, when the answers are random.** "Random" here means every question answered uniformly at random over its
 possible responses (each of the ten ratings, each answer, each of the six pairs, each of the 24 orderings or 84 splits of points). It is a diagnostic of the
-scoring rules, not a model of real people, who do not answer uniformly: nothing can promise that people's real answers pick every class equally often.
+scoring rules. It does not model real people, who do not answer uniformly, so nothing can promise that their real answers pick every class equally often.
 Measured on 100,000 random answer sets (`python tools/balance.py report --n 100000 --seed 4242`). The first table is the **long** quiz; the second compares the three lengths:
 
 | Class | Result share | Its specializations' shares within the class |
@@ -307,12 +307,12 @@ in, but the remaining differences (about 0.3 points at most, on the short quiz) 
 
 **How it was reached, and what changed in the original sixteen questions.** The original trait profiles could not make some
 specializations win at all, and some classes were favoured far more than others (worst specialization 7.7% of its class,
-classes 8.5-14.5%). The fix is data, listed in [app/seed_tuning.py](app/seed_tuning.py) rather than hidden in code, and found with
+classes 8.5-14.5%). The fix is data, listed in [app/seed_tuning.py](app/seed_tuning.py) where anyone can read it, and found with
 `tools/balance.py` plus a greedy search that was then reviewed by hand against each answer's meaning:
 
 * five original questions changed type with their answers unchanged: Q07 (weather) and Q11 (objects kept for their beauty) became **rankings**; Q03 (an unfamiliar city), Q09 (a festival) and Q15 (restoring a hard day) became **six-point splits**;
 * eight original answers have a different (primary, secondary) class pair, to even out how often each class is favoured;
-* **class intensities**: 35 answers shift up to a point of weight between their two classes (for example 2.5 and 0.5, or an even 1.5 and 1.5, instead of 2 and 1), found with
+* **class intensities**: 35 answers shift up to a point of weight between their two classes (for example 2.5 and 0.5, or an even 1.5 and 1.5, where the usual split is 2 and 1), found with
   `tools/equalize_classes.py` so that every class is chosen equally often. The two classes of an answer and the total of 3 never change, so the class scores of a complete
   answer set still sum to zero; Q01, the worked example in this document, is left as written;
 * **direct specialization weights** were added to 59 answers (25 of them answers of original questions) and the multiplier raised from 3.0 to 5.0;
@@ -333,8 +333,8 @@ python tools/balance.py report --config exported.json    # shares for a configur
 python tools/balance.py parity                       # confirm the fast simulator agrees with the real engine
 ```
 
-The class and trait associations behind the questions are playstyle lore, not science: studies of WoW players found little or
-no link between personality and class choice. Balanced here means "no specialization is starved", not "predictive".
+The class and trait associations behind the questions are playstyle lore with no science behind them: studies of WoW players found little or
+no link between personality and class choice. Balanced here means "no specialization is starved". It makes no claim to predict anything.
 
 **Upgrading an existing database.** A database that still holds the *unedited* seed of an earlier release is upgraded to the
 current seed (algorithm 1.3.0) automatically at start-up. A database you have edited is never rewritten silently: new columns are added,
@@ -342,7 +342,7 @@ it keeps its questions and keeps working (every question is read as asked in the
 adopts the new seed.
 
 **Result paragraphs.** The result shows "What the class does": a class paragraph and a specialization paragraph, written in this
-project's own words from Blizzard's official class pages and the Forever class deep dives (not copied from them), with a link to
+project's own words from Blizzard's official class pages and the Forever class deep dives (none of it copied), with a link to
 Blizzard's page. They are stored in the configuration and editable under *Profiles*.
 
 ## API overview
@@ -409,9 +409,9 @@ pytest
 ```
 
 296 automated tests cover scoring (normalization, ties, determinism, weight edits), the API (privacy of
-`/quiz`, edits, persistence across restart, simulation purity, revision conflicts, import/export/reset),
+`/quiz`, edits, persistence across restart, simulation purity, revision conflicts, import, export and reset),
 build validation (51 points, ranks, prerequisites, role consistency, verification rules), the draft talent catalog and the 27 draft builds
-with their installer, the guides, drawn talent trees and icons that the result page shows, the **balance** of the seed quiz at each length (`tests/test_balance.py`), the short/medium/long quizzes (`tests/test_lengths.py`), the share format and the specialization pages (`tests/test_share.py`, `tests/test_spec_pages.py`), the version stamp (`tests/test_version.py`), confidence mode and its browser twin (`tests/test_adaptive.py`), the maths PDF (`tests/test_math_pdf.py`), and the **static edition**: the JavaScript engine against
+with their installer, the guides, drawn talent trees and icons that the result page shows, the **balance** of the seed quiz at each length (`tests/test_balance.py`), the short, medium and long quizzes (`tests/test_lengths.py`), the share format and the specialization pages (`tests/test_share.py`, `tests/test_spec_pages.py`), the version stamp (`tests/test_version.py`), confidence mode and its browser twin (`tests/test_adaptive.py`), the maths PDF (`tests/test_math_pdf.py`), and the **static edition**: the JavaScript engine against
 the Python engine and the live API (`tests/test_static_parity.py`, needs `node`, skipped without it) and the site builder
 (`tests/test_build_static.py`).
 
@@ -447,7 +447,7 @@ app/static/         browser interface (plain ES modules, no build step); engine.
                     parts.js holds the cards shared by result and specialization pages, share.js fills in the share format,
                     views/specs.js is the class and specialization pages
 catalog/            draft Forever talent catalog and 27 draft builds, their build scripts, installer and reconciliation ledger
-tools/balance.py    balance report / parity at each quiz length (developer tool, needs numpy: requirements-dev.txt)
+tools/balance.py    balance report and parity check at each quiz length (developer tool, needs numpy: requirements-dev.txt)
 tools/tune_weights.py  suggests direct specialization weights that keep every length balanced
 tools/equalize_classes.py  suggests class-weight intensities that make every class equally likely at every length
 tools/build_math_pdf.py  builds docs/oracle-math.pdf, the maths behind the selections, from the live configuration

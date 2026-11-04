@@ -56,7 +56,7 @@ class Strict(BaseModel):
 
 
 # --------------------------------------------------------------------------
-# Talent catalog (game data, imported rather than shipped)
+# Talent catalog (game data imported from outside the application)
 # --------------------------------------------------------------------------
 
 
@@ -236,11 +236,11 @@ class Trait(Strict):
 
 
 class SpecGuide(Strict):
-    """What a player of this specialization needs to know about roles and gear. General guidance, not an item list."""
+    """What a player of this specialization needs to know about roles and gear. General guidance that names no items."""
 
     dungeon_role: LongText = ""
     raid_role: LongText = ""
-    note: LongText = Field(default="", description="A caveat shown with the guidance, for example that it is general rather than game-specific.")
+    note: LongText = Field(default="", description="A caveat shown with the guidance, for example that it is general and may not match the game.")
     gear: list[LongText] = Field(default_factory=list, description="What to look out for on gear.")
     competes_with: list[LongText] = Field(default_factory=list, description="Which specializations compete for similar gear.")
 
@@ -310,9 +310,9 @@ SHARE_FIELDS = (
 
 #: The blurb a participant copies to share a result, until an administrator changes it. Keep in step with static/share.js.
 DEFAULT_SHARE_TEMPLATE = (
-    "The stars say I'm a {class} – {spec}! ✦\n"
-    "Class scores: {class_scores} ({confidence}, {questions} questions; relative scores, not percentages).\n"
-    "Also in the stars: {also_class} – {also_spec}; closest in {class}: {next_spec}.\n"
+    "The stars say I'm a {spec} {class}! ✦\n"
+    "Class scores: {class_scores} ({confidence}, {questions} questions; relative scores).\n"
+    "Also in the stars: {also_spec} {also_class}. Closest in {class}: {next_spec}.\n"
     "Find yours on the Forever Character Oracle: {link}"
 )
 
@@ -729,8 +729,8 @@ class Metadata(BaseModel):
     quiz_length: str = "long"
     scores_are_probabilities: bool = False
     note: str = (
-        "Scores are relative compatibility indicators, not probabilities. "
-        "Confidence labels are heuristics, not statistical estimates."
+        "Scores are relative compatibility indicators on a scale with no fixed maximum. "
+        "Confidence labels are heuristics based on the gap between the top two class scores."
     )
 
 
@@ -872,8 +872,8 @@ class BatchSimulateResponse(BaseModel):
     baseline: BatchSide
     simulated: Optional[BatchSide] = None
     note: str = (
-        "Frequencies come from uniformly random answer sets. They are diagnostic of the scoring "
-        "rules, not empirical population probabilities."
+        "Frequencies come from uniformly random answer sets. They diagnose the scoring "
+        "rules and say nothing about how real people answer."
     )
 
 

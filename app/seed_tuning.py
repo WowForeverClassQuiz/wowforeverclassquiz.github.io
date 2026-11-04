@@ -8,7 +8,7 @@ where listed here, and adds direct specialization weights (also for the added qu
 ``tools/balance.py`` and a greedy search, then reviewed by hand against each answer's meaning; the numbers it achieves
 are checked by ``tests/test_balance.py``.
 
-Every entry is documented data, not a hidden adjustment: edit or delete any of them in the administrative interface.
+Every entry is documented data, and none of it is hidden in code: edit or delete any of it in the administrative interface.
 
   TYPE_CHANGES         original questions turned into "ranking" or "allocation" questions (same four answers and
                        weights; see scoring.py for how a ranking or a split of six points weighs them).

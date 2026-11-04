@@ -179,7 +179,7 @@ def test_every_one_of_the_27_specializations_can_be_the_recommendation(config):
         for si, spec in enumerate(cls.specializations):
             won, answers = _reach(config, ci, si)
             if won:
-                ev = evaluate(config, answers)      # confirm with the real engine, not only the search's own arithmetic
+                ev = evaluate(config, answers)      # confirm with the real engine as well as the search's own arithmetic
                 won = (ev.result.primary_class.id, ev.result.primary_specialization.id) == (cls.id, spec.id)
             if not won:
                 unreachable.append(f"{cls.id}/{spec.id}")

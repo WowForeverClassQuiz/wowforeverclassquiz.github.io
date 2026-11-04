@@ -26,7 +26,7 @@ export async function render(container) {
   const set = (a) => { state.adminAnswers = a; mountPicker(); updateCount(); };
 
   const qSel = h("select", { "aria-label": "Question to override" }, cfg.questions.map((q) => h("option", { value: q.id },
-    `${q.id.toUpperCase()} · ${q.type === "scale" ? "scale" : q.type === "pick_two" ? "pick two" : "choice"} – ${q.text.slice(0, 44)}…`)));
+    `${q.id.toUpperCase()} · ${q.type === "scale" ? "scale" : q.type === "pick_two" ? "pick two" : "choice"}: ${q.text.slice(0, 44)}…`)));
   const aSel = h("select", { "aria-label": "Answer to override" });
   const fillAnswers = () => {
     const q = cfg.questions.find((x) => x.id === qSel.value);
@@ -74,7 +74,7 @@ export async function render(container) {
         h("label", { class: "field", style: { width: "130px" } }, "Seed", seed),
         h("label", { class: "field", style: { width: "150px" } }, "Quiz length", lengthSel),
         h("button", { class: "btn", type: "button", style: { alignSelf: "end" }, onclick: () => runBatch(+count.value, seed.value === "" ? null : +seed.value) }, "Run batch diagnostic")),
-      h("p", { class: "muted", style: { fontSize: "0.85rem", marginTop: "10px" } }, "A batch scores uniformly random answer sets to reveal systematic bias. Frequencies are diagnostics of the scoring rules, not population probabilities.")),
+      h("p", { class: "muted", style: { fontSize: "0.85rem", marginTop: "10px" } }, "A batch scores uniformly random answer sets to reveal systematic bias. Frequencies diagnose the scoring rules and say nothing about how real people answer.")),
     resultBox,
   );
   mountPicker(); updateCount(); drawOverrides(); drawSpecOverrides();
@@ -99,7 +99,7 @@ function drawOverrides() {
   overrides.forEach((o, idx) => {
     const saved = cfg.questions.find((q) => q.id === o.question_id).answers.find((a) => a.id === o.answer_id);
     overridesBox.append(h("details", { open: true },
-      h("summary", {}, `${o.question_id.toUpperCase()} / ${o.answer_id.toUpperCase()}`, " ", badge("temporary", "info")),
+      h("summary", {}, `${o.question_id.toUpperCase()} answer ${o.answer_id.toUpperCase()}`, " ", badge("temporary", "info")),
       h("p", { class: "muted", style: { fontSize: "0.85rem" } }, saved.text),
       h("h4", {}, "Class weights"),
       weightGrid(cfg.classes.map((c) => ({ id: c.id, name: c.name })), o.class_weights, (id, v) => { o.class_weights[id] = v; }, full(cfg.classes.map((c) => c.id), saved.class_weights)),
@@ -140,7 +140,7 @@ function drawSpecOverrides() {
     const err = h("div");
     const ta = h("textarea", { rows: 2, "aria-label": `Profile for ${o.class_id} ${o.specialization_id}`, oninput: () => { o.text = ta.value; try { parseProfile(o.text); clear(err); } catch (e) { clear(err).append(h("p", { class: "errors" }, e.message)); } } }, o.text);
     specBox.append(h("details", { open: true },
-      h("summary", {}, `${o.class_id} / ${o.specialization_id}`, " ", badge("temporary", "info")),
+      h("summary", {}, `${o.class_id}: ${o.specialization_id}`, " ", badge("temporary", "info")),
       h("p", { class: "muted", style: { fontSize: "0.85rem" } }, "trait=multiplier pairs in order: primary, secondary, tertiary… (any number of traits)"),
       ta, err,
       h("div", { class: "row", style: { marginTop: "8px" } }, h("button", { class: "btn small danger", type: "button", onclick: () => { specOverrides.splice(idx, 1); drawSpecOverrides(); } }, "Remove override"))));

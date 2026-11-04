@@ -268,9 +268,9 @@ def build(cfg: Config, out: Path, quick: bool = False) -> dict:
                 f"algorithm {c.algorithm_version} &nbsp;·&nbsp; {date.today():%B %-d, %Y}", SMALL),
               P("This document explains every calculation that turns your answers into a recommendation, and every number behind it. "
                 "Each table is computed from the quiz's live configuration and from seeded simulations, so it can be regenerated whenever "
-                "the weights change (<font name='DVM'>python tools/build_math_pdf.py</font>). Scores are <b>relative compatibility indicators, not "
-                "probabilities</b>; the only probabilities in this document are the ones in the confidence model (section 8), which are exact "
-                "<i>within that model</i> and rest on assumptions stated there. The quiz is playstyle lore, not a personality science: studies of "
+                "the weights change (<font name='DVM'>python tools/build_math_pdf.py</font>). Scores are <b>relative compatibility indicators</b> on a scale with no fixed maximum. The only "
+                "probabilities in this document are the ones in the confidence model (section 8), which are exact "
+                "<i>within that model</i> and rest on assumptions stated there. The quiz is playstyle lore with no personality science behind it: studies of "
                 "WoW players found little or no link between personality and class choice.", BODY)]
     story += [P("Contents", H2),
               P("1 The pipeline in one page &nbsp;·&nbsp; 2 Questions and responses &nbsp;·&nbsp; 3 Baseline subtraction &nbsp;·&nbsp; 4 Class and trait scores "
@@ -321,7 +321,7 @@ def build(cfg: Config, out: Path, quick: bool = False) -> dict:
     story += [P("Two consequences hold for every question and every class, trait and specialization: the contributions average to zero over the responses "
                 "(so no question favours anything on average), and, because every answer carries a class weight of 2 + 1 (or another split of 3), the class "
                 "contributions of any single response add up to zero, so the nine class scores of a complete answer set sum to zero. They are comparisons "
-                "with the average answer pattern, not amounts.")]
+                "with the average answer pattern and measure no absolute amount.")]
     q01 = cfg.get_question("q01")
     t01 = compile_config(cfg).questions[0]
     ci = {cid: i for i, cid in enumerate(c.class_ids)}
@@ -377,7 +377,7 @@ def build(cfg: Config, out: Path, quick: bool = False) -> dict:
 
     # ================================================================ 6 labels and margins
     story += [P("6&nbsp;&nbsp;Reading the gap: labels and margins", H1),
-              P("The label shown with a result is a heuristic about the gap G between the top two class scores. It is not a statistical estimate.")]
+              P("The label shown with a result is a heuristic about the gap G between the top two class scores. The confidence model in section 8 supplies the probabilities.")]
     story += [eq(r"G=S_{(1)}-S_{(2)}\qquad \mathrm{Strong\ lean}:\ G\geq \mu_{s}\sqrt{n/N}\qquad \mathrm{Clear\ lean}:\ G\geq \mu_{c}\sqrt{n/N}\qquad \mathrm{otherwise\ Close\ call}")]
     ms, mc = cfg.scoring.confidence_margins.strong, cfg.scoring.confidence_margins.moderate
     story += [P(f"Here μ<sub>s</sub> = {ms:g} and μ<sub>c</sub> = {mc:g} are the configured margins for the full {c.n_classes and len(c.questions)}-question quiz (N = {len(c.questions)}), "
@@ -395,12 +395,12 @@ def build(cfg: Config, out: Path, quick: bool = False) -> dict:
               P("The quiz can be taken at three fixed lengths. The sets of questions are nested (short ⊂ medium ⊂ long), so a short result can be sharpened "
                 "by answering the next ten questions. A fixed length scores only its own questions; everything else is unchanged.")]
     kinds = ["choice", "scale", "pick_two", "ranking", "allocation"]
-    rows = [["Length", "Questions"] + [k.replace("_", " ") for k in kinds] + ["Top-two gap quartiles (25 / 50 / 75 / 90%)"]]
+    rows = [["Length", "Questions"] + [k.replace("_", " ") for k in kinds] + ["Top-two gap at the 25th, 50th, 75th and 90th percentiles"]]
     for length in LENGTHS:
         act = active_questions(c, length)
         counts = {k: sum(1 for i in act if c.questions[i].type == k) for k in kinds}
         g = rand[length]["gap"]
-        rows.append([length, str(len(act))] + [str(counts[k]) for k in kinds] + [" / ".join(f"{x:.2f}" for x in g)])
+        rows.append([length, str(len(act))] + [str(counts[k]) for k in kinds] + [", ".join(f"{x:.2f}" for x in g)])
     story += [table(rows, widths=[0.7 * inch, 0.75 * inch, 0.6 * inch, 0.55 * inch, 0.7 * inch, 0.65 * inch, 0.85 * inch, WIDTH - 4.8 * inch]),
               P(f"<b>Table 6.</b> Composition of each length, and the gap G between the top two class scores for {n_rand:,} uniformly random answer sets.", SMALL)]
     story += [P("<b>What “equal” means.</b> The quiz is balanced so that, if every response to every question were equally likely, every class would be "
@@ -463,7 +463,7 @@ def build(cfg: Config, out: Path, quick: bool = False) -> dict:
     story += [P("The first two terms are the quiz's own class and specialization scores: <b>the scoring is the evidence, and the model turns it into probabilities</b>. "
                 "The normalizers ln Z<sub>q</sub>(τ) correct for how strongly each type prefers particular responses to a question. A test verifies this identity numerically. "
                 f"Before any answer the uncertainty is the entropy H = ln 27 = {math.log(27):.3f} nats; the confidence is the posterior probability of the specialization the "
-                "scoring currently recommends (class first, then specialization), not of the posterior's own maximum, so the recommendation shown and the confidence stated always refer to the same specialization. "
+                "scoring currently recommends (class first, then specialization), even when the posterior's own maximum lies elsewhere, so the recommendation shown and the confidence stated always refer to the same specialization. "
                 "One visible consequence: when a new answer changes which specialization leads, the certainty meter can fall before it rises again.")]
     story += [P("8.3&nbsp;&nbsp;Choosing the next question", H2),
               P("For each unanswered question the Oracle computes the <b>expected information gain</b>: how much, on average, the answer would reduce the uncertainty about the type. "
@@ -493,7 +493,7 @@ def build(cfg: Config, out: Path, quick: bool = False) -> dict:
         rows.append([name, f"{r['mean_n']:.1f}", f"{r['median_n']:.0f}", f"{r['p90_n']:.0f}", pct(r["capped"], 0), pct(r["mean_conf"]), pct(r["accuracy"])])
     story += [P("8.5&nbsp;&nbsp;What to expect: simulated respondents", H2),
               P(f"To see how the procedure behaves, {n_sim} simulated people were generated for each row: a type is drawn uniformly, then they answer every question the Oracle asks "
-                "as the model says that type would. The numbers are exact consequences of the assumptions, not measurements of real people."),
+                "as the model says that type would. The numbers follow exactly from the assumptions and measure no real people."),
               table(rows, widths=[1.9 * inch, 0.8 * inch, 0.6 * inch, 0.8 * inch, 0.8 * inch, 0.9 * inch, WIDTH - 5.8 * inch]),
               P("<b>Table 11.</b> Adaptive question choice versus asking in quiz order, under the model. Choosing questions by information gain saves several questions.", SMALL)]
     # calibration
@@ -504,11 +504,11 @@ def build(cfg: Config, out: Path, quick: bool = False) -> dict:
     for lo, hi in bins:
         m = (confs >= lo) & (confs < hi)
         if m.sum():
-            rows.append([f"{lo:.2f} – {min(hi, 1):.2f}", str(int(m.sum())), pct(confs[m].mean()), pct(right[m].mean())])
+            rows.append([f"{lo:.2f} to {min(hi, 1):.2f}", str(int(m.sum())), pct(confs[m].mean()), pct(right[m].mean())])
     story += [P("Because the posterior is exact within the model, the stated confidence should match how often the recommendation is right among simulated people who stop with that "
                 "confidence. It does, up to sampling noise:"),
               table(rows, widths=[1.6 * inch, 0.8 * inch, 1.8 * inch, 1.5 * inch]),
-              P("<b>Table 12.</b> Calibration inside the model. This checks the arithmetic, not the model: real people are not guaranteed to answer like the model's.", SMALL)]
+              P("<b>Table 12.</b> Calibration inside the model. This checks the arithmetic. It cannot show that real people answer the way the model does.", SMALL)]
 
     def draw_hist(ax):
         bins_ = np.arange(9.5, 31.5, 1)
@@ -605,17 +605,17 @@ def build(cfg: Config, out: Path, quick: bool = False) -> dict:
     story += [table(rows, widths=[2.6 * inch, 1.2 * inch])]
     from app.scoring import evaluate
     ev = evaluate(cfg, answers, include_explanation=False, length="adaptive")
-    story += [P(f"The deterministic result for the same {fin.answered} answers: {ev.result.primary_class.name} – {ev.result.primary_specialization.name}; top-two class gap "
-                f"G = {ev.result.confidence.class_gap:.2f}; label “{ev.result.confidence.label}” (margins {ev.result.confidence.strong_margin:.2f} / {ev.result.confidence.moderate_margin:.2f}).")]
+    story += [P(f"The deterministic result for the same {fin.answered} answers: {ev.result.primary_specialization.name} {ev.result.primary_class.name}; top-two class gap "
+                f"G = {ev.result.confidence.class_gap:.2f}; label “{ev.result.confidence.label}” (margins {ev.result.confidence.strong_margin:.2f} and {ev.result.confidence.moderate_margin:.2f}).")]
 
     # ================================================================ 10 assumptions
     story += [P("10&nbsp;&nbsp;Assumptions and limits", H1),
               P("• <b>Scores are relative.</b> A class score is a sum of differences from the average answer pattern. “+13” does not mean 13% or 13 of anything. The nine class scores of a complete answer set sum to zero."),
-              P("• <b>The weights are judgement.</b> Which answers point to which classes comes from playstyle lore and the project's own reading of Blizzard's class descriptions, not from data. "
+              P("• <b>The weights are judgement.</b> Which answers point to which classes comes from playstyle lore and the project's own reading of Blizzard's class descriptions, and no data backs it. "
                 "Research on WoW players has found little or no link between personality and the class they choose."),
               P("• <b>Balance is a property of the rules.</b> “Every class equally likely” holds when every response is equally likely. Real answers are not uniform, so real results will not be evenly spread, and nothing here claims they should be."),
               P("• <b>The confidence is exact inside a model, and the model is an assumption.</b> It says: people of a type answer by a logit choice with sharpness λ, independently, from a uniform start. Real answers are correlated and noisier or "
-                "sharper than any one λ. Treat “90% sure” as “the answers are as consistent with one specialization as this model requires”, not as a measured accuracy."),
+                "sharper than any one λ. Read “90% sure” as “the answers are as consistent with one specialization as this model requires”; no study of real respondents backs the figure."),
               P("• <b>Talent builds are drafts.</b> The builds shown with a result come from hand-assembled talent data dated November 2, 2026 and are unverified; they play no part in the selection."),
               P("• <b>Reproducibility.</b> Everything above is deterministic given the configuration; the simulations use fixed seeds. The browser and Python engines are tested to give identical results.")]
 
@@ -642,7 +642,7 @@ def build(cfg: Config, out: Path, quick: bool = False) -> dict:
             cw = ", ".join(f"{cn[k]} {v:g}" for k, v in sorted(a.class_weights.items(), key=lambda kv: -kv[1]))
             tw = ", ".join(f"{traits[k]} {v:g}" for k, v in sorted(a.trait_weights.items(), key=lambda kv: -kv[1]))
             dw = ", ".join(f"{sn[k]} {v:g}" for k, v in a.spec_weights.items())
-            rows.append([f"{q.id.upper()}/{a.id}", cw, tw, dw or "–"])
+            rows.append([f"{q.id.upper()} {a.id.upper() if len(a.id) == 1 else a.id}", cw, tw, dw or "none"])
     story += [table(rows, widths=[0.75 * inch, 1.9 * inch, 1.45 * inch, WIDTH - 4.1 * inch], align_right_from=-1, font=6.9)]
 
     # ------------------------------------------------------------------ build the file

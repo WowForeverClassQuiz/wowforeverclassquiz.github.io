@@ -106,7 +106,7 @@ def create_app(db_path: Optional[os.PathLike | str] = None, admin_token: Optiona
         version=APP_VERSION,
         description=(
             "Local personality assessment that recommends a World of Warcraft: Forever class, "
-            "specialization and talent build. Scores are relative compatibility indicators, not probabilities."
+            "specialization and talent build. Scores are relative compatibility indicators on a scale with no fixed maximum."
         ),
         openapi_tags=TAGS,
     )

@@ -10,7 +10,7 @@
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const results = [];
   const check = (name, ok, info = "") => results.push({ test: name, result: ok ? "PASS" : "FAIL", info: String(info) });
-  // The same fixed answer set as tests/conftest.py: Druid / Feral Combat on the seed configuration.
+  // The same fixed answer set as tests/conftest.py: a Feral Combat Druid on the seed configuration.
   const ANSWERS = { q01: "a", q02: "c", q03: "0-0-6-0", q04: "a", q05: "c", q06: "d", q07: "b>c>a>d", q08: "d", q09: "3-0-0-3", q10: "a", q11: "a>c>b>d", q12: "b", q13: "d", q14: "c",
     q15: "3-3-0-0", q16: "c", q17: "6", q18: "1", q19: "10", q20: "10", q21: "5", q22: "10", q23: "1", q24: "5", q25: "b+c", q26: "a>b>c>d", q27: "b+d", q28: "b", q29: "b", q30: "b" };
   const respond = async (type, value) => {
@@ -95,7 +95,7 @@
   page = document.getElementById("view").innerText;
   check("the result is a confidence reading on the questions it asked", /Confidence reading/.test(page) && new RegExp(`${asked} questions`).test(page), asked);
   check("the result states the model's confidence", /\d+% sure/.test(page) && (Number(/(\d+)% sure/.exec(page)[1]) >= 90), /(\d+)% sure/.exec(page)?.[0]);
-  check("the confidence reading found Druid / Feral Combat, like the full quiz", document.querySelector(".result-hero h1")?.textContent === "Druid" && document.querySelector(".result-hero h2")?.textContent === "Feral Combat");
+  check("the confidence reading found Feral Combat Druid, like the full quiz", document.querySelector(".result-hero h1")?.textContent === "Druid" && document.querySelector(".result-hero h2")?.textContent === "Feral Combat");
   check("a confidence reading offers no sharpening step", !document.getElementById("refine"));
   document.getElementById("restart").click(); await sleep(100);
 
@@ -139,13 +139,13 @@
   // ---- the result --------------------------------------------------------------------------------------------------
   const hero = document.querySelector(".result-hero");
   check("a result is shown", !!hero);
-  check("class and specialization are Druid / Feral Combat", hero?.querySelector("h1").textContent === "Druid" && hero?.querySelector("h2").textContent === "Feral Combat",
+  check("class and specialization are Feral Combat Druid", hero?.querySelector("h1").textContent === "Druid" && hero?.querySelector("h2").textContent === "Feral Combat",
     `${hero?.querySelector("h1").textContent} / ${hero?.querySelector("h2").textContent}`);
   const text = document.body.innerText;
   check("the 'what the class does' section is shown", text.includes("What the Druid does"));
   check("a build card is shown", text.includes("Your build"));
   check("the build is drawn as three talent trees with talents filled in", document.querySelectorAll(".talent-tree").length === 3 && document.querySelectorAll(".talent.some, .talent.max").length > 5, document.querySelectorAll(".talent.some, .talent.max").length);
-  check("the build is shown although it is not verified, and says so", /Draft - not verified/.test(text) && !!document.querySelector(".talent-trees"));
+  check("the build is shown although it is not verified, and says so", /Draft \(not verified\)/.test(text) && !!document.querySelector(".talent-trees"));
   check("the build warns it may be out of date and gives the date of the talent data", /may not match the current World of Warcraft: Forever talent trees/.test(text) && /last updated\s*November 2, 2026/.test(text));
   check("the role in dungeons and raids, gear to look for and competing specs are shown", ["in dungeons", "in raids", "gear to look out for", "who competes with you for gear"].every((s) => text.toLowerCase().includes(s)));
   check("the class icon and a spell icon head the result", document.querySelectorAll(".hero-icons .wow-icon").length === 2, document.querySelectorAll(".hero-icons .wow-icon").length);
@@ -160,7 +160,7 @@
   const altLinks = [...document.querySelectorAll(".alt-link")];
   check("both 'also in the stars' cards link to a specialization page", altLinks.length === 2 && altLinks.every((a) => /^#\/specs\/[a-z]+\/[a-z_]+$/.test(a.getAttribute("href"))), altLinks.map((a) => a.getAttribute("href")).join(","));
   const share = document.getElementById("share-text");
-  check("the share blurb names the class and specialization, the numbers and a link", !!share && /Druid – Feral Combat/.test(share.value) && /Class scores: Druid \+[\d.]+/.test(share.value) && /https?:\/\//.test(share.value), share?.value);
+  check("the share blurb names the class and specialization, the numbers and a link", !!share && /Feral Combat Druid/.test(share.value) && /Class scores: Druid \+[\d.]+/.test(share.value) && /https?:\/\//.test(share.value), share?.value);
   check("a button copies the blurb", !!document.getElementById("share-copy"));
   const onResult = document.getElementById("view").innerText;
   check("the build shows neither 'how this was put together' nor its source", !/How this was put together/i.test(onResult) && !/Source:/.test(onResult));
@@ -185,7 +185,7 @@
 
   // ---- admin routes are not reachable -------------------------------------------------------------------------------
   location.hash = "#/admin/config"; await sleep(500);
-  check("an admin URL shows the quiz, not an admin page", !document.getElementById("adminnav") || document.getElementById("adminnav").hidden);
+  check("an admin URL shows the quiz and no admin page", !document.getElementById("adminnav") || document.getElementById("adminnav").hidden);
 
   console.table(results);
   const failed = results.filter((r) => r.result === "FAIL");

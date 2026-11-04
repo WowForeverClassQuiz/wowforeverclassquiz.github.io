@@ -1,6 +1,6 @@
 // Class and specialization pages: one page for each of the nine classes (what it does, its three specializations) and one for
 // each specialization (the traits that define it, what it does, its role and gear guide, its build). Reached from the first
-// page, the "Also in the stars" cards or the navigation bar, and paged through with Previous/Next or the arrow keys. Nothing
+// page, the "Also in the stars" cards or the navigation bar, and paged through with the Previous and Next buttons or the arrow keys. Nothing
 // here depends on having taken the quiz; when there is a result, it is shown alongside.
 import { h, clear, errorList, roleLabel, signed } from "../ui.js";
 import { get } from "../api.js";

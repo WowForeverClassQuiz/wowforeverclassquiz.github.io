@@ -67,9 +67,9 @@ export function dataNotice(build) {
   const compiled = info && longDate(info.retrieved_at);
   return h("div", { class: "build-notice", role: "note" },
     h("p", {}, h("b", {}, "This may not match the current World of Warcraft: Forever talent trees. "),
-      "Forever is in beta and its talents change often, and this build is a best guess rather than something checked in the game."),
+      "Forever is in beta and its talents change often, and this build is a best guess that nobody has checked in the game."),
     info ? h("p", {}, "Talent tree data last updated ", h("b", {}, updated || "an unknown date"),
       info.source ? ` (${info.source})` : "", compiled && compiled !== updated ? `; compiled ${compiled}` : "", ".",
-      info.data_status === "draft" ? " The trees were assembled by hand from published sources, not read from the game client." : "") : null,
+      info.data_status === "draft" ? " The trees were assembled by hand from published sources, without access to the game client." : "") : null,
     h("p", { class: "muted" }, "Rows and ranks are as listed in that data. The position of a talent within its row is approximate."));
 }

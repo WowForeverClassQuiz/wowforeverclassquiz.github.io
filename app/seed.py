@@ -1,4 +1,4 @@
-"""Seed configuration: the original sixteen-question quiz, class/trait/specialization
+"""Seed configuration: the original sixteen-question quiz, class, trait and specialization
 definitions, and placeholder build records.
 
 This module is data only. ``build_default_config()`` returns a fresh ``Config`` every
@@ -8,7 +8,7 @@ Answer encoding used below, per the project specification::
 
     (answer_id, text, (primary_class, secondary_class), (primary_trait, secondary_trait))
 
-The primary class/trait receives 2 points and the secondary receives 1.
+The primary class and trait receive 2 points and the secondary ones receive 1.
 
 Questions q17-q30 (added in algorithm 1.1.0) are described in ``NEW_QUESTIONS`` below. They also carry direct
 specialization weights; the sixteen original questions deliberately do not.
@@ -34,7 +34,7 @@ from .models import (
 
 ALGORITHM_VERSION = "1.4.0"
 
-# Primary / secondary / tertiary multipliers for the original three-trait profiles.
+# Multipliers for the primary, secondary and tertiary trait of the original three-trait profiles.
 SPEC_MULTIPLIERS = (1.5, 1.0, 0.45)
 
 # --------------------------------------------------------------------------
@@ -43,7 +43,7 @@ SPEC_MULTIPLIERS = (1.5, 1.0, 0.45)
 
 TRAITS = [
     ("wild", "Intuition", "Attraction to nature, spontaneity, and organic processes",
-     "You trust natural rhythms and spontaneity over rigid structure."),
+     "You trust natural rhythms and spontaneity, and rigid structure chafes."),
     ("scholar", "Curiosity", "Intellectual exploration and systematic understanding",
      "You are driven to understand how things work, and why."),
     ("duty", "Conviction", "Responsibility, principles, and moral commitment",
@@ -283,7 +283,7 @@ QUESTIONS = [
 # "What this class does" paragraphs shown with the result. Written in this project's own words from
 # Blizzard's official class pages (worldofwarcraft.blizzard.com/en-us/game/classes/<class>), which
 # describe the retail game, and from the Forever class deep dives for specialization playstyle. They are
-# summaries, not Blizzard's text; each class links to the page it was written from. Edit freely.
+# summaries in this project's own words; each class links to the page it was written from. Edit freely.
 # --------------------------------------------------------------------------
 
 OVERVIEW_URL = "https://worldofwarcraft.blizzard.com/en-us/game/classes/{}"
@@ -345,7 +345,7 @@ OVERVIEWS = {
         },
     ),
     "shaman": (
-        "Shamans commune with the spirits of earth, air, fire and water, bargaining and balancing rather than commanding. Planted "
+        "Shamans commune with the spirits of earth, air, fire and water, bargaining and balancing with them. Planted "
         "totems strengthen friends and hamper foes, and a Shaman may heal or fight, whether in the thick of melee or from a distance.",
         {
             "elemental_combat": "A ranged caster of lightning, tremors and molten rock, with totems backing up its destructive power.",
@@ -379,13 +379,13 @@ OVERVIEWS = {
 #
 # Mapping basis. Published studies find little or no link between player personality and class choice
 # (Mosley 2010, Boise State; Bean et al. 2016, Entertainment Computing), so these are playstyle associations
-# from community lore, not science: tanks as natural leaders, healers as dutiful and unseen, melee damage
+# from community lore, with no science behind them: tanks as natural leaders, healers as dutiful and unseen, melee damage
 # as risk-taking and attention-seeking, casters and stealth damage as independent and resourceful (Ten Ton
 # Hammer, "Healer, DPS, or Tank: What's Your Archetype?"), plus each specialization's playstyle as described
 # in Blizzard's Forever class deep dives (summarised by Maxroll): pets, damage-over-time juggling, totems,
 # stealth and poisons, stance switching. All of it is a best guess and is meant to be edited.
 #
-# Each pole / answer is (text, (class1, class2), (trait1, trait2)). Class and trait pairs get 2 and 1 points like the
+# Each pole or answer is (text, (class1, class2), (trait1, trait2)). Class and trait pairs get 2 and 1 points like the
 # original questions. Direct specialization weights ('class/spec' keys) are not listed here: they live in
 # seed_tuning.SPEC_WEIGHTS, which was tuned for balance (see that module).
 # --------------------------------------------------------------------------
@@ -400,7 +400,7 @@ NEW_QUESTIONS = {
         rationale=_SCALE_NOTE + " Tanks are described as natural, outgoing leaders; stealth and ranged damage as independent and wary of leading.",
         agree=("Takes the lead and holds the line.", ("warrior", "paladin"), ("guardian", "power")),
         disagree=("Works independently and avoids leading.", ("hunter", "rogue"), ("freedom", "focus"))),
-    "q18": dict(type="scale", text="I plan every step before I begin, rather than working it out as I go.",
+    "q18": dict(type="scale", text="I plan every step before I begin.",
         rationale=_SCALE_NOTE + " Arcane (stacked burst) and Affliction (stacked damage over time) reward preparation; Combat and Enhancement are reactive, weapon-driven styles.",
         agree=("Plans first.", ("warlock", "mage"), ("focus", "scholar")),
         disagree=("Improvises.", ("shaman", "rogue"), ("instinct", "trickster"))),
@@ -562,7 +562,7 @@ def build_default_config(include_drafts: bool = True) -> Config:
             id=f"{cls.id}-{spec.id}-leveling".replace("_", "-"),
             class_id=cls.id,
             specialization_id=spec.id,
-            name=f"{spec.name} — Leveling & General PvE",
+            name=f"{spec.name}: leveling and general PvE",
             role=spec.role.split("_or_")[0],
             purpose="leveling_pve",
             status="pending",

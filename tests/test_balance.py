@@ -1,7 +1,7 @@
 """The seed quiz must stay balanced, and every tuning edit must be documented and sensible.
 
-"Under random answers" means every question is answered uniformly at random over its possible responses. These shares are
-diagnostics of the scoring rules, not probabilities of real people's results.
+"Under random answers" means every question is answered uniformly at random over its possible responses. These shares
+diagnose the scoring rules and say nothing about real people's results.
 """
 from collections import Counter, defaultdict
 
@@ -76,7 +76,7 @@ def test_class_pair_changes_only_touch_original_answers_and_keep_a_primary_and_s
 
 
 def test_changes_to_the_original_questions_are_small():
-    """The overlay is a rebalancing, not a rewrite: only a handful of original answers move classes."""
+    """The overlay rebalances the quiz without rewriting it: only a handful of original answers move classes."""
     assert len(seed_tuning.ORIGINAL_CLASS_PAIRS) <= 10 and len(seed_tuning.TYPE_CHANGES) <= 6
 
 

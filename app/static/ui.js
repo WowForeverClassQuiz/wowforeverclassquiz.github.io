@@ -34,7 +34,7 @@ export const signed = (n, d = 2) => {
   return v > 0 && Number(s) !== 0 ? `+${s}` : Number(s) < 0 ? s.replace("-", "−") : s;
 };
 export const pct = (f, d = 1) => `${(f * 100).toFixed(d)}%`;
-export const roleLabel = (r) => String(r).split("_or_").map((x) => x.replace(/_/g, " ")).join(" / ").replace(/\b\w/g, (c) => c.toUpperCase());
+export const roleLabel = (r) => String(r).split("_or_").map((x) => x.replace(/_/g, " ")).join(" or ").replace(/\b\w/g, (c) => c.toUpperCase()).replace(/ Or /g, " or ");
 const PURPOSES = {
   leveling_pve: "Leveling & general PvE", solo_leveling: "Solo leveling", dungeon_healing: "Dungeon healing",
   dungeon_tanking: "Dungeon tanking", dungeon_damage: "Dungeon damage", raid_60: "Level-60 raiding", pvp: "PvP", hybrid: "Hybrid",
