@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from app import scoring
-from app.models import LENGTHS, Config
+from app.models import LENGTHS, TIERS, Config
 from app.public import public_quiz, with_builds
 from app.seed import build_default_config
 from app.static_export import export_static_data
@@ -95,7 +95,7 @@ CONFIGS = {"seed": build_default_config, "edited": edited_config, "all-tied": al
 
 
 def of_length(cfg: Config, answers: dict, length: str) -> dict:
-    ids = {q.id for q in cfg.enabled_questions() if LENGTHS.index(q.min_length) <= LENGTHS.index(length)}
+    ids = {q.id for q in cfg.enabled_questions() if TIERS.index(q.min_length) <= LENGTHS.index(length)}
     return {k: v for k, v in answers.items() if k in ids}
 
 

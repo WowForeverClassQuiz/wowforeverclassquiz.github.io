@@ -20,6 +20,8 @@
   const ANSWERS = { q01: "a", q02: "c", q03: "0-0-6-0", q04: "a", q05: "c", q06: "d", q07: "b>c>a>d", q08: "d", q09: "3-0-0-3", q10: "a", q11: "a>c>b>d", q12: "b", q13: "d", q14: "c",
     q15: "3-3-0-0", q16: "c", q17: "6", q18: "1", q19: "10", q20: "10", q21: "5", q22: "10", q23: "1", q24: "5", q25: "b+c", q26: "a>b>c>d", q27: "b+d", q28: "b", q29: "b", q30: "b" };
   const N = 30;
+  // Confidence mode may ask any of the fifty questions, so this respondent answers each the way the model finds most likely for a Feral Combat Druid.
+  const MODAL = {"q01": "a", "q02": "c", "q17": "1", "q03": "0-0-6-0", "q04": "a", "q25": "a+b", "q05": "c", "q18": "1", "q06": "d", "q07": "b>c>a>d", "q19": "10", "q08": "c", "q28": "b", "q09": "6-0-0-0", "q20": "10", "q10": "a", "q26": "a>b>c>d", "q11": "b>c>a>d", "q21": "10", "q12": "b", "q29": "a", "q13": "a", "q22": "10", "q14": "a", "q27": "a+d", "q15": "6-0-0-0", "q23": "1", "q16": "c", "q24": "1", "q30": "a", "q31": "b", "q32": "b>a>c>d", "q33": "b", "q34": "b>a>c>d", "q35": "a", "q36": "6-0-0-0", "q37": "a", "q38": "d>a>b>c", "q39": "b", "q40": "0-6-0-0", "q41": "b", "q42": "d>b>a>c", "q43": "c", "q44": "d>b>a>c", "q45": "a", "q46": "0-0-0-6", "q47": "b", "q48": "b>a>c>d", "q49": "a", "q50": "1"};
   /** Give the question currently on screen its response through the real controls. */
   const respond = async (q, value) => {
     if (q.type === "pick_two") {
@@ -72,17 +74,17 @@
   check("the intro offers confidence mode, short, medium and long, with confidence mode chosen first",
     [...document.querySelectorAll('input[name="quiz-length"]')].map((i) => i.value).join() === "adaptive,short,medium,long" && picked() === "adaptive", picked());
   check("each option says how many questions it has", ["10 questions", "20 questions", "30 questions"].every((t) => document.querySelector(".lengths").innerText.includes(t)));
-  check("the intro line explains the chosen mode", /At least 10 questions, then the Oracle stops as soon as it is 90% sure/.test(document.getElementById("view").innerText));
+  check("the intro line explains the chosen mode", /The Oracle stops as soon as it is 90% sure \(30 questions at most\)/.test(document.getElementById("view").innerText));
   // ---- confidence mode (the default): the Oracle picks each question and stops once it is sure ------------------------------------
   const idByText = Object.fromEntries(quiz.questions.map((q) => [q.text, q.id]));
   const until = async (test, ms = 4000) => { for (let t = 0; t < ms && !test(); t += 50) await sleep(50); return test(); };
-  check("confidence mode is offered first and says how it works", /Confidence/.test(document.querySelector(".lengths").innerText) && /10–30 questions/.test(document.querySelector(".lengths").innerText));
+  check("confidence mode is offered first and says how it works", /Confidence/.test(document.querySelector(".lengths").innerText) && /Up to 30 questions/.test(document.querySelector(".lengths").innerText));
   document.getElementById("begin").click(); await sleep(500);
   let asked = 0, sawLabel = "";
   for (let guard = 0; guard < 40; guard++) {
     await until(() => document.querySelector(".question"));
     const q = byId[idByText[document.querySelector(".question").textContent]];
-    await respond(q, ANSWERS[q.id]);
+    await respond(q, MODAL[q.id]);
     asked++;
     await until(() => document.getElementById("reveal") || (document.getElementById("next") && !document.getElementById("next").disabled));
     sawLabel = document.getElementById("certainty-label")?.textContent || sawLabel;
@@ -90,7 +92,7 @@
     document.getElementById("next").click(); await sleep(150);
   }
   check("it showed how sure it was while asking", /The Oracle is \d+% sure/.test(sawLabel) && !!document.querySelector(".certainty-bar .tick"), sawLabel);
-  check("it asked at least ten questions and stopped before the whole quiz", asked >= 10 && asked < 30, asked);
+  check("it stopped as soon as it was sure, well before the limit of thirty", asked >= 1 && asked < 15, asked);
   document.getElementById("reveal").click(); await sleep(2200);
   page = document.getElementById("view").innerText;
   check("the result is a confidence reading on the questions it asked", /Confidence reading/.test(page) && new RegExp(`${asked} questions`).test(page), asked);
@@ -279,7 +281,7 @@
   const thresholdNow = async () => (await (await fetch("/api/v1/adaptive/next", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ answers: {} }) })).json()).threshold;
   await go("#/admin/profiles", 1500);
   let conf = document.querySelector('input[aria-label="Stop at confidence (%)"]');
-  check("Profiles has the confidence-mode settings with the current values", !!conf && conf.value === "90" && document.querySelector('input[aria-label="Minimum questions"]')?.value === "10" && document.querySelector('input[aria-label="Maximum questions"]')?.value === "30", conf?.value);
+  check("Profiles has the confidence-mode settings with the current values", !!conf && conf.value === "90" && document.querySelector('input[aria-label="Minimum questions (1 means none)"]')?.value === "1" && document.querySelector('input[aria-label="Maximum questions"]')?.value === "30", conf?.value);
   conf.value = "95"; conf.dispatchEvent(new Event("input", { bubbles: true })); await sleep(100);
   [...conf.closest("section").querySelectorAll("button")].find((b) => b.textContent === "Save").click(); await sleep(1500);
   check("saving the threshold changes what the Oracle waits for", (await thresholdNow()) === 0.95);

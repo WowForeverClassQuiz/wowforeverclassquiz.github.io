@@ -1,7 +1,16 @@
 # Changelog
 
 The version shown on the first page is `APP_VERSION` in [app/version.py](app/version.py). The scoring rules carry their own
-`algorithm_version` (currently 1.4.0), which changes only when the arithmetic or the seed weights do.
+`algorithm_version` (currently 1.5.0), which changes only when the arithmetic or the seed weights do.
+
+## 1.7.0 · 2026-11-03
+
+* **No minimum number of questions** in confidence mode: the Oracle stops as soon as it is 90% sure of one specialization, and still never asks more than 30. An administrator can set a minimum in Profiles & Settings.
+* **Twenty more questions (q31 to q50), asked only in confidence mode.** Two for each class (a choice and a ranking or six-point split) tell that class's three specializations apart, and a role question and a distance question cut across all classes. The short, medium and long quizzes are unchanged. The Question Editor has a new "Confidence mode only" choice under "Asked in".
+* Simulated respondents now need about 6 questions on average, down from about 16, and almost none run to the limit. If people answer less consistently than the model assumes the stated confidence overshoots; the maths document shows by how much.
+* Six other ways of choosing the next question were tried, including ones that aim at the leading specialization. None needed fewer questions than information gain, so the rule is unchanged.
+* The maths document has new sections on respondents who are less consistent than assumed, the question-choice comparison and why the pool has fifty questions.
+* The scoring algorithm is now 1.5.0 because confidence mode asks different questions. Scores and results for the same answers are unchanged.
 
 ## 1.6.1 · 2026-11-03
 

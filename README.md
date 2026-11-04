@@ -2,7 +2,7 @@
 
 A personality quiz that recommends a **class, specialization and talent build** for
 *World of Warcraft: Forever*. By default it runs in **confidence mode**: it asks the most informative questions one at a time and stops once it is 90% sure of one
-specialization (at least 10 questions, at most 30). Participants can instead choose a fixed **short (10), medium (20) or long (30)** reading; the questions are of five kinds (pick one, rate 1-10, pick two,
+specialization (there is no minimum, and it never asks more than 30). It draws on a pool of 50 questions, 20 of which only this mode asks. Participants can instead choose a fixed **short (10), medium (20) or long (30)** reading; the questions are of five kinds (pick one, rate 1-10, pick two,
 rank four, spend six points) and are scored with a transparent, deterministic algorithm. It comes in two editions that share one scoring engine:
 
 * **Local app** (run with Python, below): the quiz plus an administrative dashboard. Nothing leaves your machine.
@@ -66,16 +66,27 @@ load, a coloured badge takes its place. To host them yourself or drop them, chan
 ## Confidence mode, and the maths
 
 **Confidence mode** (the default) works like a twenty-questions game. After each answer the Oracle works out how likely each of the 27 pairs of class and specialization is,
-picks the unanswered question that will tell it the most, and stops as soon as the specialization the scoring currently recommends has reached **90%** (after at least 10
-questions; it never asks more than 30). A certainty meter shows how sure it is while you answer, and after the minimum you can also *Reveal now* at whatever certainty
-it has reached. The result then says which mode it was, how many questions it rests on and the model's confidence ("93% sure"). Simulated respondents need about 16
-questions on average; people who answer at random run to the limit and get a lower confidence and a weaker label.
+picks the unanswered question that will tell it the most, and stops as soon as the specialization the scoring currently recommends has reached **90%**. There is no
+minimum number of questions, and it never asks more than 30. A certainty meter shows how sure it is while you answer, and you can also *Reveal now* at whatever certainty
+it has reached. The result then says which mode it was, how many questions it rests on and the model's confidence ("93% sure"). Simulated respondents need about 6
+questions on average (a median of 5, and 9 or fewer for nine in ten); people who answer at random run to the limit about a third of the time and get a lower confidence
+and a weaker label.
 
 * **How the probability is defined.** A logit choice model: a person of each type is assumed to pick responses with probability proportional to exp(their contribution
   to that type's scores). Bayes' rule over the 27 types then gives the probabilities; the quiz's own class and specialization scores *are* the evidence in it. The
   "probabilities" are exact inside the model, and the model is an assumption about how people answer (its two sharpness constants say how consistently). Read
   "90% sure" as "the answers are as consistent with one specialization as the model requires"; no study of real respondents backs the figure.
-* **Settings.** Admin > Profiles & Settings: whether the mode is offered, the minimum and maximum number of questions, the confidence threshold and the two sharpness
+* **The question pool.** Fifty questions: the thirty of the fixed quizzes plus q31 to q50 ([app/seed_extra.py](app/seed_extra.py)), which only confidence mode asks
+  (*Confidence mode only* under *Asked in* in the Question Editor). The thirty separate classes well and the specializations of one class poorly: Arcane against Frost Mage
+  had almost no evidence behind it, and every one of the weakest pairs was within a class. The twenty added questions are two for each class (a choice with an answer per
+  specialization, and a ranking or six-point split) plus a role question and a distance question. They carry slightly less evidence per question than the originals, so the
+  shorter quizzes come from covering the weak pairs. No weight was made heavier to get there. The short, medium and long quizzes do not ask them and are unchanged.
+* **Choosing the next question.** The question with the largest expected information gain over all 27 types. Six rules that aim each question at the current leading
+  specialization were simulated against it (a table in the PDF); none needed fewer questions, because once one specialization leads, the most informative question is
+  already the one that separates it from its closest rivals.
+* **How far to trust the figure.** Simulated respondents who are 70% as consistent as the model assumes are right about 88% of the time when the Oracle says about 94%, and
+  respondents 50% as consistent about 70% when it says 91%. Raising the confidence threshold in the settings narrows that gap at the cost of more questions.
+* **Settings.** Admin > Profiles & Settings: whether the mode is offered, the minimum (1 means none) and maximum number of questions, the confidence threshold and the two sharpness
   values. The browser edition runs the same code as the server (a test compares every step of whole question paths), and `POST /api/v1/adaptive/next` is the API
   behind it.
 * **The maths document.** [docs/oracle-math.pdf](docs/oracle-math.pdf) explains every calculation behind a selection (response tables, baseline subtraction, class,
@@ -269,8 +280,8 @@ Pick the lightest level that does the job.
    [app/seed.py](app/seed.py). The seed content (questions, weights, profiles) is in [app/seed.py](app/seed.py) and is
    only used for a fresh database or a reset. Update the matching expectations in `tests/test_scoring.py`.
 
-`expected_question_count` (30) lives in the configuration's `quiz` block and the validator enforces it, so changing the
-number of questions is a deliberate edit of that block plus the questions. Choice questions need 2 to 8 answers, pick-two, ranking
+`expected_question_count` (30) lives in the configuration's `quiz` block and the validator enforces it for the questions the fixed quizzes ask (those marked
+*Confidence mode only* are extra), so changing the number of fixed-quiz questions is a deliberate edit of that block plus the questions. Choice questions need 2 to 8 answers, pick-two, ranking
 and allocation questions exactly 4, and scale questions exactly the two answers `agree` and `disagree`.
 
 ### Balance (algorithm 1.3.0)
@@ -408,17 +419,17 @@ most points and the build's role must fit the specialization.
 pytest
 ```
 
-296 automated tests cover scoring (normalization, ties, determinism, weight edits), the API (privacy of
+307 automated tests cover scoring (normalization, ties, determinism, weight edits), the API (privacy of
 `/quiz`, edits, persistence across restart, simulation purity, revision conflicts, import, export and reset),
 build validation (51 points, ranks, prerequisites, role consistency, verification rules), the draft talent catalog and the 27 draft builds
-with their installer, the guides, drawn talent trees and icons that the result page shows, the **balance** of the seed quiz at each length (`tests/test_balance.py`), the short, medium and long quizzes (`tests/test_lengths.py`), the share format and the specialization pages (`tests/test_share.py`, `tests/test_spec_pages.py`), the version stamp (`tests/test_version.py`), confidence mode and its browser twin (`tests/test_adaptive.py`), the maths PDF (`tests/test_math_pdf.py`), and the **static edition**: the JavaScript engine against
+with their installer, the guides, drawn talent trees and icons that the result page shows, the **balance** of the seed quiz at each length (`tests/test_balance.py`), the short, medium and long quizzes (`tests/test_lengths.py`), the share format and the specialization pages (`tests/test_share.py`, `tests/test_spec_pages.py`), the version stamp (`tests/test_version.py`), confidence mode and its browser twin (`tests/test_adaptive.py`), the twenty confidence-mode-only questions (`tests/test_extra_questions.py`), the maths PDF (`tests/test_math_pdf.py`), and the **static edition**: the JavaScript engine against
 the Python engine and the live API (`tests/test_static_parity.py`, needs `node`, skipped without it) and the site builder
 (`tests/test_build_static.py`).
 
 The interface tests need a browser; paste a script into the browser console:
 
 * **Local app**: with the server running and a **freshly loaded** page, paste [tests/ui_smoke.js](tests/ui_smoke.js) (about a minute). It checks that
-  all 30 questions open with the right controls for their type, answers survive navigation, the result cannot be revealed early,
+  all 30 fixed-quiz questions open with the right controls for their type, answers survive navigation, the result cannot be revealed early,
   on-screen rankings equal the API's, the inspector reproduces the API's per-question values, and an admin weight edit saves and
   restores (it changes one weight and puts it back, advancing the revision by two, so use a scratch database: `ORACLE_DB=/tmp/smoke.db`).
 * **Static site**: serve the `site` folder and paste [tests/static_smoke.js](tests/static_smoke.js). It answers all 30 questions through
@@ -432,6 +443,7 @@ app/models.py       Pydantic models (configuration, requests, responses)
 app/scoring.py      pure scoring, simulation and batch diagnostics
 app/seed.py         original questions, weights, profiles, placeholder builds
 app/seed_tuning.py  the documented balance overlay applied to the seed (type changes, class pairs, direct weights)
+app/seed_extra.py   q31 to q50, the twenty questions only confidence mode asks
 app/validation.py   cross-reference checks for a whole configuration
 app/public.py       the participant view (questions, builds) shared by the API and the static export
 app/drafts.py       loads the shipped draft talent catalog and builds into the seed

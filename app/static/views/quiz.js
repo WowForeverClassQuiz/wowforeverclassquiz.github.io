@@ -57,7 +57,9 @@ const firstUnanswered = () => Math.max(0, questions().findIndex((q) => !state.an
 function introCount() {
   const len = currentLength();
   return len && len.adaptive
-    ? `At least ${len.min_questions} questions, then the Oracle stops as soon as it is ${Math.round(len.confidence * 100)}% sure (${len.max_questions} at most).`
+    ? (len.min_questions > 1
+      ? `At least ${len.min_questions} questions, then the Oracle stops as soon as it is ${Math.round(len.confidence * 100)}% sure (${len.max_questions} at most).`
+      : `The Oracle stops as soon as it is ${Math.round(len.confidence * 100)}% sure (${len.max_questions} questions at most).`)
     : `${total()} questions.`;
 }
 
@@ -107,7 +109,7 @@ function lengthPicker() {
     ls.map((l) => h("label", { class: "length" },
       h("input", { type: "radio", name: "quiz-length", value: l.id, checked: chosen.id === l.id, onchange: () => { state.length = l.id; draw(); document.querySelector(`input[name="quiz-length"][value="${l.id}"]`)?.focus(); } }),
       h("span", { class: "length-name" }, l.name),
-      h("span", { class: "length-meta" }, l.adaptive ? `${l.min_questions}–${l.max_questions} questions · about ${l.minutes}–${l.minutes_max} min` : `${l.question_count} questions · about ${l.minutes} min`),
+      h("span", { class: "length-meta" }, l.adaptive ? (l.min_questions > 1 ? `${l.min_questions}–${l.max_questions} questions · about ${l.minutes}–${l.minutes_max} min` : `Up to ${l.max_questions} questions · stops as soon as it is sure`) : `${l.question_count} questions · about ${l.minutes} min`),
       h("span", { class: "length-blurb" }, l.description))));
 }
 
@@ -204,7 +206,7 @@ function certainty(i, s, fresh) {
     h("div", { class: "progress certainty-bar", role: "progressbar", "aria-valuemin": 0, "aria-valuemax": 100, "aria-valuenow": pct, "aria-label": "How sure the Oracle is" },
       h("i", { style: { width: `${pct}%` } }), s ? h("b", { class: "tick", style: { left: `${s.threshold * 100}%` }, title: `It stops at ${Math.round(s.threshold * 100)}%` }) : null),
     s ? h("p", { class: "muted certainty-note" },
-      `It asks the questions that tell it the most and stops once it is ${Math.round(s.threshold * 100)}% sure, after at least ${s.min_questions} questions (${s.max_questions} at most).`) : null);
+      `It asks the questions that tell it the most and stops once it is ${Math.round(s.threshold * 100)}% sure${s.min_questions > 1 ? `, after at least ${s.min_questions} questions` : ""} (${s.max_questions} at most).`) : null);
 }
 
 function drawAdaptiveQuestion() {

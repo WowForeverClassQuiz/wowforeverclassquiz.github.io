@@ -130,16 +130,18 @@ def answers_for(cfg):
 
 def test_seed_has_thirty_questions_and_the_original_sixteen_keep_their_four_answers(config):
     from app.seed_tuning import TYPE_CHANGES
-    assert len(config.questions) == 30 and config.quiz.expected_question_count == 30
-    assert sorted(q.id for q in config.questions) == [f"q{i:02d}" for i in range(1, 31)]
+    core = [q for q in config.questions if q.min_length != "adaptive"]
+    assert len(core) == 30 and config.quiz.expected_question_count == 30 and len(config.questions) == 50
+    assert sorted(q.id for q in config.questions) == [f"q{i:02d}" for i in range(1, 51)]
+    assert sorted(q.id for q in core) == [f"q{i:02d}" for i in range(1, 31)]
     for q in [x for x in config.questions if x.id <= "q16"]:
         assert [a.id for a in q.answers] == ["a", "b", "c", "d"], q.id
         assert q.type == (TYPE_CHANGES[q.id][0] if q.id in TYPE_CHANGES else "choice"), q.id
-    assert Counter(q.type for q in config.questions) == {"choice": 14, "scale": 8, "pick_two": 2, "ranking": 3, "allocation": 3}
+    assert Counter(q.type for q in core) == {"choice": 14, "scale": 8, "pick_two": 2, "ranking": 3, "allocation": 3}
 
 
 def test_new_questions_cover_the_question_types_and_every_class_and_specialization(config):
-    new = [q for q in config.questions if q.id > "q16"]
+    new = [q for q in config.questions if "q16" < q.id <= "q30"]
     assert Counter(q.type for q in new) == {"scale": 8, "pick_two": 2, "ranking": 1, "choice": 3}
     for q in new:
         if q.type == "scale":
@@ -164,7 +166,10 @@ def test_new_questions_cover_the_question_types_and_every_class_and_specializati
 
 
 def test_new_questions_only_credit_specializations_of_the_classes_their_answer_favours(config):
+    role_questions = {"q49", "q50"}      # these two span every class, so their direct weights follow roles and may name specializations outside the answer's two classes
     for q in config.questions:
+        if q.id in role_questions:
+            continue
         for a in q.answers:
             for key in a.spec_weights:
                 assert key.split("/")[0] in a.class_weights, (q.id, a.id, key)
@@ -294,7 +299,7 @@ def test_all_nine_classes_can_win(config):
     c = compile_config(config)
     for ci, cid in enumerate(c.class_ids):
         # Pick, for each question, the response with the highest adjusted contribution to this class.
-        picks = {q.id: q.answer_ids[max(range(len(q.answer_ids)), key=lambda a: q.class_delta[a][ci])] for q in c.questions}
+        picks = {q.id: q.answer_ids[max(range(len(q.answer_ids)), key=lambda a: q.class_delta[a][ci])] for q in c.questions if q.length_rank < 3}
         assert evaluate(config, picks).result.primary_class.id == cid
 
 
@@ -462,7 +467,7 @@ def test_counterfactuals_cover_every_alternative_answer(config, druid_answers):
     ev = evaluate(config, druid_answers, include_explanation=True, include_counterfactuals=True)
     cfs = ev.explanation.counterfactuals
     c = compile_config(config)
-    assert len(cfs) == sum(len(q.answer_ids) - 1 for q in c.questions)   # 3 per original question, 9 per scale, 5 per pair, 1 per binary
+    assert len(cfs) == sum(len(q.answer_ids) - 1 for q in c.questions if q.length_rank < 3)   # 3 per original question, 9 per scale, 5 per pair, 1 per binary
     # Re-evaluating one counterfactual in full agrees with the shortcut.
     cf = cfs[0]
     changed = dict(druid_answers, **{cf.question_id: cf.answer_id})

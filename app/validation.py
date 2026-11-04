@@ -84,9 +84,10 @@ def validate_config(config: Config) -> list[str]:
     # -- questions ---------------------------------------------------------------
     spec_key_strs = {f"{cl.id}/{sp.id}" for cl in config.classes for sp in cl.specializations}
     enabled = [q for q in config.questions if q.enabled]
-    if len(enabled) != config.quiz.expected_question_count:
+    core = [q for q in enabled if q.min_length != "adaptive"]
+    if len(core) != config.quiz.expected_question_count:
         errors.append(
-            f"The quiz requires exactly {config.quiz.expected_question_count} enabled questions; found {len(enabled)}."
+            f"The quiz requires exactly {config.quiz.expected_question_count} enabled questions outside the confidence-mode-only tier; found {len(core)}."
         )
     for q in config.questions:
         n = len(q.answers)

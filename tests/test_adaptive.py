@@ -36,6 +36,13 @@ def model(c):
     return adaptive.Model(c)
 
 
+@pytest.fixture(scope="module")
+def feral(c, model):
+    """A deterministic respondent of type Druid / Feral Combat: the most likely response to every one of the fifty questions."""
+    tau = next(sp.gidx for cl in c.classes if cl.id == "druid" for sp in cl.specs if sp.id == "feral_combat")
+    return {q.id: q.answer_ids[max(range(len(q.answer_ids)), key=lambda r: model.logp[i][r][tau])] for i, q in enumerate(c.questions)}
+
+
 def respond(model, c, qi, tau, rng):
     """Answer question qi as a person of type tau would, under the model."""
     probs = [math.exp(row[tau]) for row in model.logp[qi]]
@@ -133,18 +140,18 @@ def test_the_adaptive_order_needs_fewer_questions_than_the_quiz_order():
 def test_the_status_before_any_answer_asks_the_most_informative_question(c):
     st = adaptive.status(c, {})
     assert st.answered == 0 and not st.done and st.next_question_id and not st.can_reveal
-    assert math.isclose(st.confidence, 1 / 27) and st.threshold == 0.9 and (st.min_questions, st.max_questions) == (10, 30)
+    assert math.isclose(st.confidence, 1 / 27) and st.threshold == 0.9 and (st.min_questions, st.max_questions) == (1, 30)
 
 
-def test_a_clear_respondent_is_told_to_stop_at_the_minimum_not_before(c):
+def test_a_clear_respondent_is_told_to_stop_as_soon_as_the_oracle_is_sure(c, feral):
     answers = {}
     for k in range(40):
         st = adaptive.status(c, answers)
         if st.done:
             break
-        answers[st.next_question_id] = DRUID_ANSWERS[st.next_question_id]
-    assert st.done and st.reason == "confident" and st.confidence >= 0.9 and len(answers) >= 10
-    assert not any(adaptive.status(c, dict(list(answers.items())[:k])).done for k in range(0, 10))      # never before ten answers
+        answers[st.next_question_id] = feral[st.next_question_id]
+    assert st.done and st.reason == "confident" and st.confidence >= 0.9 and len(answers) < 15
+    assert not any(adaptive.status(c, dict(list(answers.items())[:k])).done for k in range(0, len(answers)))      # not one answer sooner
     assert st.recommended.class_id == "druid" and st.recommended.specialization_id == "feral_combat"
 
 
@@ -164,7 +171,7 @@ def test_an_inconsistent_respondent_runs_to_the_limit(c, model):
         assert st.reason == "limit" and len(answers) == 30
 
 
-def test_the_limit_and_the_minimum_come_from_the_settings(cfg):
+def test_the_limit_and_the_minimum_come_from_the_settings(cfg, feral):
     cfg = cfg.model_copy(deep=True)
     cfg.scoring.adaptive = AdaptiveSettings(min_questions=3, max_questions=5, confidence=0.5)
     c = compile_config(cfg)
@@ -173,7 +180,7 @@ def test_the_limit_and_the_minimum_come_from_the_settings(cfg):
         st = adaptive.status(c, answers)
         if st.done:
             break
-        answers[st.next_question_id] = DRUID_ANSWERS[st.next_question_id]
+        answers[st.next_question_id] = feral[st.next_question_id]
     assert st.done and 3 <= len(answers) <= 5
 
 
@@ -187,19 +194,19 @@ def test_synthetic_respondents_are_recovered_about_as_often_as_the_confidence_sa
     mean_conf = sum(r[1] for r in runs) / len(runs)
     accuracy = sum(r[2] for r in runs) / len(runs)
     assert abs(mean_conf - accuracy) < 0.07, (mean_conf, accuracy)
-    assert 10 <= sum(r[0] for r in runs) / len(runs) < 22 and accuracy > 0.8
+    assert 3 <= sum(r[0] for r in runs) / len(runs) < 14 and accuracy > 0.8
 
 
 # ------------------------------------------------------------------ result and API
 
 
-def test_a_confidence_mode_result_scores_exactly_the_questions_answered(cfg, c):
+def test_a_confidence_mode_result_scores_exactly_the_questions_answered(cfg, c, feral):
     answers = {}
     while True:
         st = adaptive.status(c, answers)
         if st.done:
             break
-        answers[st.next_question_id] = DRUID_ANSWERS[st.next_question_id]
+        answers[st.next_question_id] = feral[st.next_question_id]
     ev = evaluate(cfg, answers, include_explanation=False, length="adaptive")
     m = ev.metadata
     assert m.quiz_length == "adaptive" and m.total_questions == m.answered_questions == len(answers) and m.complete and not m.missing_questions
@@ -210,9 +217,12 @@ def test_a_confidence_mode_result_scores_exactly_the_questions_answered(cfg, c):
 
 def test_a_confidence_mode_result_needs_the_minimum_number_of_answers(cfg):
     few = dict(list(DRUID_ANSWERS.items())[:6])
+    assert evaluate(cfg, dict(list(few.items())[:1]), include_explanation=False, length="adaptive").metadata.total_questions == 1   # no minimum by default
+    strict = cfg.model_copy(deep=True)
+    strict.scoring.adaptive.min_questions = 10
     with pytest.raises(ScoringError, match="at least 10"):
-        evaluate(cfg, few, include_explanation=False, length="adaptive")
-    assert evaluate(cfg, few, include_explanation=False, length="adaptive", allow_partial=True).metadata.total_questions == 6
+        evaluate(strict, few, include_explanation=False, length="adaptive")
+    assert evaluate(strict, few, include_explanation=False, length="adaptive", allow_partial=True).metadata.total_questions == 6
     with pytest.raises(IncompleteAssessmentError):
         evaluate(cfg, {}, include_explanation=False, length="adaptive")
 
@@ -226,7 +236,7 @@ def test_every_evaluation_reports_the_models_probability_for_its_recommendation(
     assert full.result.confidence.probability > 0.99
 
 
-def test_the_adaptive_endpoint(client):
+def test_the_adaptive_endpoint(client, feral):
     first = client.post(f"{API}/adaptive/next", json={"answers": {}}).json()
     assert first["next_question_id"] and first["answered"] == 0 and first["done"] is False and "reason" not in first
     answers = {}
@@ -234,11 +244,11 @@ def test_the_adaptive_endpoint(client):
         st = client.post(f"{API}/adaptive/next", json={"answers": answers}).json()
         if st["done"]:
             break
-        answers[st["next_question_id"]] = DRUID_ANSWERS[st["next_question_id"]]
+        answers[st["next_question_id"]] = feral[st["next_question_id"]]
     assert st["done"] and st["reason"] == "confident" and st["confidence"] >= 0.9 and "next_question_id" not in st
     r = client.post(f"{API}/evaluate", json={"answers": answers, "length": "adaptive"})
     assert r.status_code == 200 and r.json()["metadata"]["quiz_length"] == "adaptive"
-    assert client.post(f"{API}/evaluate", json={"answers": dict(list(answers.items())[:5]), "length": "adaptive"}).status_code == 400
+    assert client.post(f"{API}/evaluate", json={"answers": {}, "length": "adaptive"}).status_code == 400
     assert client.post(f"{API}/adaptive/next", json={"answers": {"q99": "a"}}).status_code == 400
     assert client.post(f"{API}/adaptive/next", json={"answers": {"q09": "nonsense"}}).status_code == 400
 
@@ -247,7 +257,7 @@ def test_confidence_mode_is_the_default_and_the_first_option(client):
     quiz = client.get(f"{API}/quiz").json()
     assert quiz["default_length"] == "adaptive" and [l["id"] for l in quiz["lengths"]] == ["adaptive", "short", "medium", "long"]
     ad = quiz["lengths"][0]
-    assert ad["adaptive"] is True and (ad["min_questions"], ad["max_questions"], ad["confidence"]) == (10, 30, 0.9) and len(ad["question_ids"]) == 30
+    assert ad["adaptive"] is True and (ad["min_questions"], ad["max_questions"], ad["confidence"]) == (1, 30, 0.9) and len(ad["question_ids"]) == 50
 
 
 def test_an_administrator_can_change_or_switch_off_confidence_mode(client):

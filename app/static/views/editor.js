@@ -79,7 +79,7 @@ function draw() {
   clear(root);
   const q = question();
   const idx = cfg.questions.findIndex((x) => x.id === qid);
-  const label = (x) => `${String(cfg.questions.indexOf(x) + 1).padStart(2, "0")} · ${x.id.toUpperCase()} · ${TYPE_NAMES[x.type] || x.type} · ${{ short: "S", medium: "M" }[x.min_length] || "L"} – ${x.text.length > 56 ? x.text.slice(0, 54) + "…" : x.text}`;
+  const label = (x) => `${String(cfg.questions.indexOf(x) + 1).padStart(2, "0")} · ${x.id.toUpperCase()} · ${TYPE_NAMES[x.type] || x.type} · ${{ short: "S", medium: "M", adaptive: "C" }[x.min_length] || "L"}: ${x.text.length > 56 ? x.text.slice(0, 54) + "…" : x.text}`;
   const select = h("select", { id: "qselect", "aria-label": "Question", onchange: (e) => selectQuestion(e.target.value) },
     cfg.questions.map((x) => h("option", { value: x.id, selected: x.id === qid }, label(x))));
 
@@ -95,13 +95,13 @@ function draw() {
   };
 
   // Which quiz lengths ask this question; the counts show what the three quizzes currently hold.
-  const rank = { short: 0, medium: 1, long: 2 };
+  const rank = { short: 0, medium: 1, long: 2, adaptive: 3 };
   const countFor = (len) => cfg.questions.filter((x) => x.enabled && rank[x.min_length || "long"] <= rank[len]).length;
   const lengthSelect = h("select", { "aria-label": "Shortest quiz length that asks this question", onchange: (e) => { qd.min_length = e.target.value; refreshQ(); } },
-    [["short", "Short, medium and long quizzes"], ["medium", "Medium and long quizzes"], ["long", "Long quiz only"]]
+    [["short", "Short, medium and long quizzes"], ["medium", "Medium and long quizzes"], ["long", "Long quiz only"], ["adaptive", "Confidence mode only"]]
       .map(([v, t]) => h("option", { value: v, selected: qd.min_length === v }, t)));
   const lengthField = h("label", { class: "field", style: { marginTop: "12px" } }, "Asked in",
-    lengthSelect, h("small", {}, `Currently the short quiz asks ${countFor("short")} questions, the medium ${countFor("medium")} and the long ${countFor("long")}. Changing this can unbalance a length: check Simulation > batch for it.`));
+    lengthSelect, h("small", {}, `Currently the short quiz asks ${countFor("short")} questions, the medium ${countFor("medium")} and the long ${countFor("long")}; confidence mode can draw on all ${countFor("adaptive")}. Changing this can unbalance a length: check Simulation > batch for it.`));
 
   root.append(
     h("div", { class: "page-head" },

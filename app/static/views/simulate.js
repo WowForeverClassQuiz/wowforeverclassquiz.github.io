@@ -160,7 +160,7 @@ function payloadOverrides() {
 async function runCompare() {
   if (!Object.keys(state.adminAnswers).length) { toast("Choose at least one answer first.", "warn"); return; }
   try {
-    const rank = { short: 0, medium: 1, long: 2 }, length = lengthSel.value;
+    const rank = { short: 0, medium: 1, long: 2, adaptive: 3 }, length = lengthSel.value;
     const asked = new Set(cfg.questions.filter((q) => q.enabled && rank[q.min_length || "long"] <= rank[length]).map((q) => q.id));   // only this length's questions
     const body = { answers: Object.fromEntries(Object.entries(state.adminAnswers).filter(([id]) => asked.has(id))), length, ...payloadOverrides() };
     clear(resultBox).append(h("p", { class: "muted" }, "Evaluating…"));

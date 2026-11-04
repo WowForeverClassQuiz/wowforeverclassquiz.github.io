@@ -292,7 +292,7 @@ export function evaluate(c, answers, { allowPartial = false, length = "long" } =
 
   const gap = classTotals[classOrder[0]] - classTotals[classOrder[1]];
   // the margins scale with the square root of the share of questions asked (1 for the full quiz), as scoring.margin_scale
-  const scale = Math.sqrt(active.length / c.questions.length);
+  const scale = Math.sqrt(active.length / c.questions.filter((q) => q.length_rank < LENGTHS.length).length);
   const strongMargin = c.strong_margin * scale, moderateMargin = c.moderate_margin * scale;
   const label = r(gap) >= strongMargin ? "Strong lean" : r(gap) >= moderateMargin ? "Clear lean" : "Close call";
 

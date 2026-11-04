@@ -48,7 +48,7 @@ def test_every_length_mixes_question_types_including_the_new_ones():
 
 def test_the_public_quiz_lists_the_lengths_and_defaults_to_confidence_mode(client):
     body = client.get(f"{API}/quiz").json()
-    assert body["question_count"] == 30 and len(body["questions"]) == 30 and body["default_length"] == "adaptive"
+    assert body["question_count"] == 30 and len(body["questions"]) == 50 and body["default_length"] == "adaptive"
     assert [l["id"] for l in body["lengths"]] == ["adaptive", "short", "medium", "long"]
     assert all(set(l["question_ids"]) <= {q["id"] for q in body["questions"]} for l in body["lengths"])
     assert not any("min_length" in q for q in body["questions"])   # tier assignments are configuration and stay hidden from participants
@@ -133,7 +133,8 @@ def test_the_admin_can_move_a_question_between_lengths_and_it_persists(client):
 def test_a_configuration_without_tiers_is_just_the_long_quiz():
     cfg = build_default_config()
     for q in cfg.questions:
-        q.min_length = "long"
+        if q.min_length != "adaptive":
+            q.min_length = "long"
     lengths = fixed_lengths(cfg)
     assert [l.id for l in lengths] == ["long"] and lengths[0].question_count == 30
     ev = evaluate(cfg, DRUID_ANSWERS, include_explanation=False)

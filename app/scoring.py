@@ -36,7 +36,7 @@ vector; the baseline is always the mean over that question's responses:
             given p points counts p / 3.
 
 Quiz lengths. A question's ``min_length`` (short, medium or long) is the shortest quiz that asks it, and longer quizzes ask it
-too, so the quizzes are nested. Scoring a length uses only that length's questions; the arithmetic is otherwise unchanged. The
+too, so the quizzes are nested. A question marked "adaptive" is asked only in confidence mode and in no fixed quiz. Scoring a length uses only that length's questions; the arithmetic is otherwise unchanged. The
 confidence margins scale with the square root of the share of questions asked (the gap between the top two classes of random answers
 grows about that fast), so a short quiz is not called a "close call" merely for being short.
 
@@ -83,6 +83,7 @@ from .models import (
     TraitScore,
     ALLOCATION_POINTS,
     LENGTHS,
+    TIERS,
     SCALE_MAX,
     SCALE_MIN,
 )
@@ -152,7 +153,7 @@ class CQuestion:
     id: str
     text: str
     type: str
-    length_rank: int  # position of min_length in LENGTHS: 0 short, 1 medium, 2 long
+    length_rank: int  # position of min_length in TIERS: 0 short, 1 medium, 2 long, 3 only confidence mode
     item_ids: tuple[str, ...]  # the selectable answers as authored (pick_two needs them to parse 'a+c')
     answer_ids: tuple[str, ...]  # every possible RESPONSE id (answers, answer pairs, or '1'..'10')
     answer_texts: tuple[str, ...]
@@ -214,6 +215,11 @@ class Compiled:
         return len(self.spec_keys)
 
     @property
+    def n_core(self) -> int:
+        """How many questions the fixed quizzes draw on (the long quiz asks all of them); confidence-mode-only questions are extra."""
+        return sum(1 for q in self.questions if q.length_rank < len(LENGTHS))
+
+    @property
     def n_classes(self) -> int:
         return len(self.class_ids)
 
@@ -234,8 +240,8 @@ def active_questions(c: Compiled, length: str = "long") -> tuple[int, ...]:
 
 
 def margin_scale(c: Compiled, active: Sequence[int]) -> float:
-    """Factor applied to the confidence margins: sqrt of the share of the quiz's questions that are asked (1.0 for the full quiz)."""
-    return sqrt(len(active) / len(c.questions))
+    """Factor applied to the confidence margins: sqrt of the share of the long quiz's questions that are asked (1.0 for the full quiz)."""
+    return sqrt(len(active) / c.n_core)
 
 
 def compile_config(config: Config) -> Compiled:
@@ -269,7 +275,7 @@ def compile_config(config: Config) -> Compiled:
                 id=q.id,
                 text=q.text,
                 type=q.type,
-                length_rank=LENGTHS.index(q.min_length),
+                length_rank=TIERS.index(q.min_length),
                 item_ids=tuple(a.id for a in q.answers),
                 answer_ids=tuple(r[0] for r in table),
                 answer_texts=tuple(r[1] for r in table),

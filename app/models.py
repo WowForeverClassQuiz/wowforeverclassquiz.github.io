@@ -26,8 +26,12 @@ LongText = Annotated[str, Field(max_length=4000)]
 BuildStatus = Literal["verified", "draft", "unverified", "pending"]
 QuestionType = Literal["choice", "scale", "pick_two", "ranking", "allocation"]
 QuizLength = Literal["short", "medium", "long"]
+#: What a question's ``min_length`` may hold: a quiz length, or "adaptive" for a question only confidence mode asks.
+QuestionTier = Literal["short", "medium", "long", "adaptive"]
 #: Shortest to longest. A question with ``min_length`` L is asked in quiz length L and every longer one, so the quizzes are nested.
 LENGTHS: tuple[str, ...] = ("short", "medium", "long")
+#: The fixed quizzes plus the confidence-mode-only tier, which no fixed quiz asks.
+TIERS: tuple[str, ...] = LENGTHS + ("adaptive",)
 #: "class_id/specialization_id", e.g. "warrior/fury"
 SpecKey = Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9_\-]*/[a-z0-9][a-z0-9_\-]*$", max_length=130)]
 SCALE_MIN, SCALE_MAX = 1, 10
@@ -295,9 +299,12 @@ class Question(Strict):
     low_label: Annotated[str, Field(max_length=80)] = "Strongly disagree"
     high_label: Annotated[str, Field(max_length=80)] = "Strongly agree"
     rationale: LongText = Field(default="", description="Administrator note: why the weights are what they are.")
-    min_length: QuizLength = Field(
+    min_length: QuestionTier = Field(
         default="long",
-        description="The shortest quiz length that asks this question: short, medium or long. Longer quizzes also ask it.",
+        description=(
+            "The shortest quiz length that asks this question: short, medium or long. Longer quizzes also ask it. "
+            "'adaptive' marks a question that only confidence mode asks."
+        ),
     )
     answers: list[Answer]
 
@@ -343,7 +350,7 @@ class AdaptiveSettings(Strict):
     """
 
     enabled: bool = True
-    min_questions: int = Field(default=10, ge=1, description="Never reveal before this many questions have been answered.")
+    min_questions: int = Field(default=1, ge=1, description="Never reveal before this many questions have been answered. 1 means no minimum.")
     max_questions: int = Field(default=30, ge=1, description="Reveal after this many questions even if the Oracle is not sure.")
     confidence: float = Field(default=0.90, gt=0, lt=1, description="Stop once the recommended specialization has this probability.")
     sharpness_class: float = Field(default=1.0, gt=0, le=10, description="How strongly a class's weights steer an answer (lambda_c).")
@@ -903,7 +910,7 @@ class QuestionPatch(Strict):
     low_label: Optional[Annotated[str, Field(min_length=1, max_length=80)]] = None
     high_label: Optional[Annotated[str, Field(min_length=1, max_length=80)]] = None
     rationale: Optional[LongText] = None
-    min_length: Optional[QuizLength] = None
+    min_length: Optional[QuestionTier] = None
 
 
 class QuizPatch(Strict):

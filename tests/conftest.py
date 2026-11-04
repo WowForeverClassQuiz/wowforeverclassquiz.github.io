@@ -26,8 +26,13 @@ ORIGINAL_ANSWERS = {k: v for k, v in DRUID_ANSWERS.items() if k <= "q16"}
 
 
 def first_answers(cfg):
-    """The first possible response to every enabled question (answer 'a', rating 1, the first pair, ordering or split)."""
-    return {q.id: response_coefficients(q)[0][0] for q in cfg.enabled_questions()}
+    """The first possible response to every question of the long quiz (answer 'a', rating 1, the first pair, ordering or split)."""
+    return {q.id: response_coefficients(q)[0][0] for q in core_questions(cfg)}
+
+
+def core_questions(cfg):
+    """The enabled questions the fixed quizzes draw on: all of them except the confidence-mode-only tier."""
+    return [q for q in cfg.enabled_questions() if q.min_length != "adaptive"]
 
 
 @pytest.fixture

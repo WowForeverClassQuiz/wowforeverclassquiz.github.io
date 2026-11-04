@@ -11,6 +11,7 @@ from . import builds as builds_mod
 from .models import (
     ALLOCATION_POINTS,
     LENGTHS,
+    TIERS,
     SCALE_MAX,
     SCALE_MIN,
     BuildDetail,
@@ -58,7 +59,7 @@ def public_lengths(cfg: Config) -> list[PublicLength]:
     qs = cfg.enabled_questions()
     found: list[tuple[str, list[str]]] = []
     for rank, length in enumerate(LENGTHS):
-        ids = [q.id for q in qs if LENGTHS.index(q.min_length) <= rank]
+        ids = [q.id for q in qs if TIERS.index(q.min_length) <= rank]
         if not ids:
             continue
         if found and found[-1][1] == ids:
@@ -80,7 +81,7 @@ def public_lengths(cfg: Config) -> list[PublicLength]:
             id="adaptive", name="Confidence", adaptive=True, question_count=top, question_ids=[q.id for q in qs],
             minutes=minutes(ad.min_questions), minutes_max=minutes(top), min_questions=ad.min_questions, max_questions=top, confidence=ad.confidence,
             description=f"Adaptive: the Oracle picks each question to learn the most and stops once it is {round(ad.confidence * 100)}% sure of your specialization "
-                        f"(at least {ad.min_questions} questions).",
+                        + (f"(at least {ad.min_questions} questions)." if ad.min_questions > 1 else f"(never more than {top} questions)."),
         ))
     return lengths
 
@@ -92,7 +93,7 @@ def public_quiz(cfg: Config) -> PublicQuiz:
         quiz_id=cfg.quiz.id,
         title=cfg.quiz.title,
         subtitle=cfg.quiz.subtitle,
-        question_count=len(qs),
+        question_count=sum(1 for q in qs if q.min_length != "adaptive"),
         questions=[public_question(q) for q in qs],
         lengths=lengths,
         share_template=cfg.quiz.share_template,
