@@ -48,6 +48,7 @@ def export_static_data(cfg: Config, build: dict | None = None) -> dict:
             "id": q.id,
             "type": q.type,
             "length_rank": q.length_rank,
+            "finalists": list(q.finalists),
             "item_ids": list(q.item_ids),
             "answer_ids": list(q.answer_ids),
             "class_raw": [list(r) for r in q.class_raw],

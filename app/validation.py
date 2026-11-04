@@ -67,7 +67,7 @@ def validate_config(config: Config) -> list[str]:
         errors.append("adaptive.min_questions cannot exceed adaptive.max_questions.")
     if ad.min_questions > pool:
         errors.append(f"adaptive.min_questions ({ad.min_questions}) exceeds the {pool} enabled questions.")
-    if not all(math.isfinite(x) for x in (ad.confidence, ad.sharpness_class, ad.sharpness_spec, ad.class_credit, ad.role_credit)):
+    if not all(math.isfinite(x) for x in (ad.confidence, ad.sharpness_class, ad.sharpness_spec, ad.class_credit, ad.role_credit, ad.tiebreak_mass)):
         errors.append("adaptive settings must be finite numbers.")
     margins = config.scoring.confidence_margins
     if margins.strong < margins.moderate:
@@ -90,6 +90,12 @@ def validate_config(config: Config) -> list[str]:
             f"The quiz requires exactly {config.quiz.expected_question_count} enabled questions outside the confidence-mode-only tier; found {len(core)}."
         )
     for q in config.questions:
+        if q.finalists:
+            unknown = [k for k in q.finalists if k not in spec_key_strs]
+            if unknown:
+                errors.append(f"Question '{q.id}' lists unknown finalists: {', '.join(unknown)}.")
+            if len(set(q.finalists)) < 2:
+                errors.append(f"Question '{q.id}' needs at least two different finalists to be a tiebreaker.")
         n = len(q.answers)
         answer_ids = [a.id for a in q.answers]
         if q.type == "choice" and not 2 <= n <= 8:

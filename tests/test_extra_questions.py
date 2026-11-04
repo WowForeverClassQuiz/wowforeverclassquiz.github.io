@@ -13,8 +13,10 @@ from app.validation import validate_config
 
 from .conftest import DRUID_ANSWERS
 from app.seed_classes import CLASS_ORDER
+from app.seed_tiebreakers import TIEBREAKERS
 
 EXTRA_IDS = [f"q{n}" for n in range(31, 51)]
+TIEBREAKER_IDS = [t[0] for t in TIEBREAKERS]
 
 
 @pytest.fixture(scope="module")
@@ -33,12 +35,12 @@ def model(c):
 
 
 def test_the_added_questions_are_asked_only_in_confidence_mode(cfg):
-    assert [q.id for q in cfg.questions if q.min_length == "adaptive"] == EXTRA_IDS + CLASS_ORDER
+    assert [q.id for q in cfg.questions if q.min_length == "adaptive"] == EXTRA_IDS + CLASS_ORDER + TIEBREAKER_IDS
     lengths = {l.id: l for l in public_lengths(cfg)}
     for length in LENGTHS:
         assert not set(EXTRA_IDS) & set(lengths[length].question_ids), length
         assert lengths[length].question_count in (10, 20, 30)
-    assert set(EXTRA_IDS) <= set(lengths["adaptive"].question_ids) and len(lengths["adaptive"].question_ids) == 74
+    assert set(EXTRA_IDS) <= set(lengths["adaptive"].question_ids) and len(lengths["adaptive"].question_ids) == 103
     with pytest.raises(UnknownQuestionError):                     # a fixed quiz refuses an answer to one of them
         evaluate(cfg, dict(DRUID_ANSWERS, q31="a"))
     ev = evaluate(cfg, dict(DRUID_ANSWERS, q31="a"), length="adaptive")      # confidence mode takes them
@@ -85,7 +87,7 @@ def test_the_added_questions_do_not_claim_more_evidence_per_question_than_the_or
     pairs = list(combinations(range(model.n_types), 2))
     per_question = lambda qi: fsum(_sym_kl(model, qi, a, b) for a, b in pairs) / len(pairs)
     core = [per_question(i) for i, q in enumerate(c.questions) if q.length_rank < len(LENGTHS)]
-    extra = [per_question(i) for i, q in enumerate(c.questions) if q.length_rank >= len(LENGTHS)]
+    extra = [per_question(i) for i, q in enumerate(c.questions) if q.id in EXTRA_IDS]
     assert fsum(extra) / len(extra) <= 1.1 * fsum(core) / len(core)
     assert max(extra) <= 1.1 * max(core)           # the strongest added question (the role question) is about as strong as the strongest original
 

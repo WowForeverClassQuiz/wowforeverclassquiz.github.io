@@ -33,16 +33,16 @@ def test_quiz_endpoint_does_not_reveal_scoring_data(client):
     r = client.get(f"{API}/quiz")
     assert r.status_code == 200
     body = r.json()
-    assert body["question_count"] == 30 and len(body["questions"]) == 74
+    assert body["question_count"] == 30 and len(body["questions"]) == 103
     by_type = {}
     for q in body["questions"]:
         by_type.setdefault(q["type"], []).append(q)
-    assert {k: len(v) for k, v in by_type.items()} == {"choice": 34, "scale": 9, "pick_two": 2, "ranking": 16, "allocation": 13}
+    assert {k: len(v) for k, v in by_type.items()} == {"choice": 63, "scale": 9, "pick_two": 2, "ranking": 16, "allocation": 13}
     assert all(len(q["answers"]) == 4 for q in by_type["pick_two"]) and all(q["pick_count"] == 2 for q in by_type["pick_two"])
     assert all(len(q["answers"]) == 4 and q["points"] is None for q in by_type["ranking"])
     assert all(len(q["answers"]) == 4 and q["points"] == 6 for q in by_type["allocation"])
-    assert sum(1 for q in by_type["choice"] if len(q["answers"]) == 4) == 22 and sum(1 for q in by_type["choice"] if len(q["answers"]) == 2) == 3
-    assert sum(1 for q in by_type["choice"] if len(q["answers"]) == 3) == 9          # the class-specific confidence-mode questions have one answer per specialization
+    assert sum(1 for q in by_type["choice"] if len(q["answers"]) == 4) == 22 and sum(1 for q in by_type["choice"] if len(q["answers"]) == 2) == 15
+    assert sum(1 for q in by_type["choice"] if len(q["answers"]) == 3) == 26         # the class-specific and three-finalist tiebreaker questions have one answer per specialization
     for q in by_type["scale"]:                       # the agree/disagree poles are scoring data and are never sent
         assert q["answers"] == [] and q["scale_min"] == 1 and q["scale_max"] == 10 and q["low_label"] and q["high_label"]
     blob = json.dumps(body)
@@ -122,7 +122,7 @@ def test_evaluate_rejects_unknown_identifiers(client, answers):
 def test_config_endpoint_returns_complete_scoring_data(client):
     cfg = client.get(f"{API}/config").json()
     assert cfg["revision"] == 1
-    assert len(cfg["questions"]) == 74 and len(cfg["classes"]) == 9 and len(cfg["traits"]) == 12
+    assert len(cfg["questions"]) == 103 and len(cfg["classes"]) == 9 and len(cfg["traits"]) == 12
     answer = cfg["questions"][0]["answers"][0]
     assert answer == {
         "id": "a",
@@ -135,7 +135,7 @@ def test_config_endpoint_returns_complete_scoring_data(client):
     assert scale["type"] == "scale" and [a["id"] for a in scale["answers"]] == ["agree", "disagree"]
     assert scale["answers"][0]["spec_weights"] == {"warrior/protection": 2.0, "paladin/protection": 1.0}
     assert scale["rationale"]
-    assert cfg["scoring"]["spec_weight_multiplier"] == 5.0 and cfg["scoring"]["algorithm_version"] == "1.6.0"
+    assert cfg["scoring"]["spec_weight_multiplier"] == 5.0 and cfg["scoring"]["algorithm_version"] == "1.7.0"
     assert cfg["classes"][0]["overview"] and cfg["classes"][0]["specializations"][0]["overview"]
     assert cfg["classes"][0]["specializations"][1]["trait_multipliers"] == {"wild": 1.5, "instinct": 1.0, "freedom": 0.45}
     assert cfg["scoring"]["class_tie_break_order"][0] == "druid"
@@ -219,7 +219,7 @@ def test_invalid_identifiers_return_appropriate_errors(client):
     assert r.status_code == 400 and r.json()["detail"]["code"] == "invalid_configuration"
     r = client.patch(f"{API}/questions/q01/answers/a", json={"expected_revision": 1, "trait_weights": {"charm": 1}})
     assert r.status_code == 400
-    assert client.patch(f"{API}/questions/q99/answers/a", json={"expected_revision": 1}).status_code == 404
+    assert client.patch(f"{API}/questions/q999/answers/a", json={"expected_revision": 1}).status_code == 404
     assert client.patch(f"{API}/questions/q01/answers/z", json={"expected_revision": 1}).status_code == 404
     assert client.patch(f"{API}/classes/dragon/specs/x", json={"expected_revision": 1}).status_code == 404
     assert client.patch(f"{API}/classes/druid/specs/x", json={"expected_revision": 1}).status_code == 404
@@ -425,7 +425,7 @@ def test_history_snapshot_can_be_restored(client):
 def test_health_endpoint(client):
     body = client.get(f"{API}/health").json()
     assert body["status"] == "ok" and body["class_count"] == 9 and body["specialization_count"] == 27
-    assert body["algorithm_version"] == "1.6.0" and body["question_count"] == 74
+    assert body["algorithm_version"] == "1.7.0" and body["question_count"] == 103
 
 
 def test_openapi_documentation_is_available_and_complete(client):

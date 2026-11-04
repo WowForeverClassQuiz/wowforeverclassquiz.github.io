@@ -2,7 +2,7 @@
 
 A personality quiz that recommends a **class, specialization and talent build** for
 *World of Warcraft: Forever*. By default it runs in **confidence mode**: it asks the most informative questions one at a time and stops once it is 90% sure of one
-specialization (there is no minimum, and it never asks more than 30). It draws on a pool of 74 questions, 44 of which only this mode asks. Participants can instead choose a fixed **short (10), medium (20) or long (30)** reading; the questions are of five kinds (pick one, rate 1-10, pick two,
+specialization (there is no minimum, and it never asks more than 30). It draws on a pool of 103 questions, 73 of which only this mode asks. Participants can instead choose a fixed **short (10), medium (20) or long (30)** reading; the questions are of five kinds (pick one, rate 1-10, pick two,
 rank four, spend six points) and are scored with a transparent, deterministic algorithm. It comes in two editions that share one scoring engine:
 
 * **Local app** (run with Python, below): the quiz plus an administrative dashboard. Nothing leaves your machine.
@@ -82,7 +82,7 @@ and a weaker label.
   specializations are all gaining, or who sits between Protection Paladin and Protection Warrior, therefore reaches 90% sooner. The probabilities of the specialization, the class and the role are shown
   beside the figure, and the two credits are in Profiles & Settings (set both to 0 for the specialization's probability alone). It is an expected credit, not a probability of the exact specialization;
   in simulation it saves about half a question to two questions, at a cost of a few points of exact-specialization accuracy for inconsistent respondents.
-* **The question pool.** Seventy-four questions: the thirty of the fixed quizzes plus q31 to q74, which only confidence mode asks
+* **The question pool.** 103 questions: the thirty of the fixed quizzes plus q31 to q103, which only confidence mode asks
   (*Confidence mode only* under *Asked in* in the Question Editor). The thirty separate classes well and the specializations of one class poorly: Arcane against Frost Mage
   had almost no evidence behind it, and every one of the weakest pairs was within a class. The twenty added questions are two for each class (a choice with an answer per
   specialization, and a ranking or six-point split) plus a role question and a distance question. They carry slightly less evidence per question than the originals, so the
@@ -90,6 +90,12 @@ and a weaker label.
   q51 to q74 ([app/seed_classes.py](app/seed_classes.py)) are personality questions in which every answer belongs to a different class (ten choices, seven rankings, seven six-point splits), written for a
   person torn among their three leading classes. They carry about 20% more class evidence per question than the originals, because each answer names a class no other answer does; every trio of
   classes has at least four of them that tell all three apart. Raising the question limit does not make the Oracle more right, only more sure (it was tested), so the limit stays at 30.
+  q75 to q103 ([app/seed_tiebreakers.py](app/seed_tiebreakers.py)) are **tiebreakers**: forced choices between the finalists, such as "as a protector, do you trust more in the light to guard, the
+  structure and workmanship of steel, or the strength of the wild?" (Protection Paladin, Protection Warrior or Feral Combat Druid) and "as a follower of the light, do you prefer to seek retribution,
+  stand in judgement, or spread forgiveness?" (the three Paladin specializations). There is one for each class, eight for groups that share a role (tanks, two groups of healers, two of melee damage,
+  three of casters) and twelve two-way questions for the closest pairs. Each lists its finalists, and it is asked only when they together hold at least 80% of the probability (a setting), so it comes
+  up when the reading has narrowed to those candidates; two of three finalists are enough, so a three-way question also serves when only the top two remain. In simulation they are asked in about half of
+  all readings and save up to half a question with no change in accuracy; a forced choice separates its finalists up to 40% more sharply than the comparable four-way questions.
 * **Choosing the next question.** The question with the largest expected information gain over all 27 types. Six rules that aim each question at the current leading
   specialization were simulated against it (a table in the PDF); none needed fewer questions, because once one specialization leads, the most informative question is
   already the one that separates it from its closest rivals.
@@ -431,10 +437,10 @@ most points and the build's role must fit the specialization.
 pytest
 ```
 
-329 automated tests cover scoring (normalization, ties, determinism, weight edits), the API (privacy of
+342 automated tests cover scoring (normalization, ties, determinism, weight edits), the API (privacy of
 `/quiz`, edits, persistence across restart, simulation purity, revision conflicts, import, export and reset),
 build validation (51 points, ranks, prerequisites, role consistency, verification rules), the draft talent catalog and the 27 draft builds
-with their installer, the guides, drawn talent trees and icons that the result page shows, the **balance** of the seed quiz at each length (`tests/test_balance.py`), the short, medium and long quizzes (`tests/test_lengths.py`), the share format and the specialization pages (`tests/test_share.py`, `tests/test_spec_pages.py`), the version stamp (`tests/test_version.py`), confidence mode and its browser twin (`tests/test_adaptive.py`), the confidence-mode-only questions (`tests/test_extra_questions.py`, `tests/test_class_questions.py`), the class and role credit in the confidence (`tests/test_confidence_credit.py`), the maths PDF (`tests/test_math_pdf.py`), and the **static edition**: the JavaScript engine against
+with their installer, the guides, drawn talent trees and icons that the result page shows, the **balance** of the seed quiz at each length (`tests/test_balance.py`), the short, medium and long quizzes (`tests/test_lengths.py`), the share format and the specialization pages (`tests/test_share.py`, `tests/test_spec_pages.py`), the version stamp (`tests/test_version.py`), confidence mode and its browser twin (`tests/test_adaptive.py`), the confidence-mode-only questions (`tests/test_extra_questions.py`, `tests/test_class_questions.py`), the class and role credit in the confidence (`tests/test_confidence_credit.py`), the tiebreakers (`tests/test_tiebreakers.py`), the maths PDF (`tests/test_math_pdf.py`), and the **static edition**: the JavaScript engine against
 the Python engine and the live API (`tests/test_static_parity.py`, needs `node`, skipped without it) and the site builder, including its cache stamping
 (`tests/test_build_static.py`).
 
@@ -457,6 +463,7 @@ app/seed.py         original questions, weights, profiles, placeholder builds
 app/seed_tuning.py  the documented balance overlay applied to the seed (type changes, class pairs, direct weights)
 app/seed_extra.py   q31 to q50, the twenty specialization questions only confidence mode asks
 app/seed_classes.py q51 to q74, the twenty-four class-separating questions only confidence mode asks
+app/seed_tiebreakers.py q75 to q103, the tiebreakers: forced choices between finalists, only confidence mode asks them
 app/validation.py   cross-reference checks for a whole configuration
 app/public.py       the participant view (questions, builds) shared by the API and the static export
 app/drafts.py       loads the shipped draft talent catalog and builds into the seed

@@ -1,7 +1,14 @@
 # Changelog
 
 The version shown on the first page is `APP_VERSION` in [app/version.py](app/version.py). The scoring rules carry their own
-`algorithm_version` (currently 1.6.0), which changes only when the arithmetic or the seed weights do.
+`algorithm_version` (currently 1.7.0), which changes only when the arithmetic or the seed weights do.
+
+## 1.9.0 · 2026-11-04
+
+* **Tiebreaker questions (q75 to q103)**, asked only in confidence mode, force a decision between the finalists. There are seventeen for groups of three specializations (the three specializations of each class, and eight groups that share a role, such as the three tanks: "do you trust more in the light to guard, the structure and workmanship of steel, or the strength of the wild?" and, for a Paladin, "retribution, judgement or forgiveness?") and twelve two-way questions for the closest pairs of finalists.
+* A tiebreaker is asked only when its finalists together hold at least 80% of the probability, so it appears when the reading has narrowed to those candidates and never earlier. Two of three finalists are enough, so a three-way question also serves when only the top two are left. The share is a setting (Profiles & Settings), and a question's finalists can be edited through the API or an exported configuration.
+* In simulation the tiebreakers are asked in about half of all readings and save up to half a question, with no change in accuracy.
+* The scoring algorithm is 1.7.0, because confidence mode now chooses among the eligible questions. Scores for the same answers are unchanged.
 
 ## 1.8.0 · 2026-11-04
 

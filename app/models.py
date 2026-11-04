@@ -306,6 +306,13 @@ class Question(Strict):
             "'adaptive' marks a question that only confidence mode asks."
         ),
     )
+    finalists: list[SpecKey] = Field(
+        default_factory=list, max_length=8,
+        description=(
+            "Tiebreaker: when set, confidence mode asks this question only when these specializations ('class/spec') together hold at least "
+            "adaptive.tiebreak_mass of the probability, so it is a forced choice between the finalists."
+        ),
+    )
     answers: list[Answer]
 
 
@@ -364,6 +371,10 @@ class AdaptiveSettings(Strict):
     role_credit: float = Field(
         default=0.5, ge=0, le=1,
         description="How much probability on a specialization with a similar role (tank, healer, melee damage, ranged damage) counts toward the confidence.",
+    )
+    tiebreak_mass: float = Field(
+        default=0.8, gt=0, le=1,
+        description="A tiebreaker question (one that lists finalists) is asked only when its finalists together hold at least this share of the probability.",
     )
 
 
@@ -935,6 +946,7 @@ class QuestionPatch(Strict):
     high_label: Optional[Annotated[str, Field(min_length=1, max_length=80)]] = None
     rationale: Optional[LongText] = None
     min_length: Optional[QuestionTier] = None
+    finalists: Optional[list[SpecKey]] = Field(default=None, max_length=8)
 
 
 class QuizPatch(Strict):

@@ -457,7 +457,8 @@ export function adaptiveStatus(c, answers) {
   else { rec = 0; post.forEach((p, g) => { if (pyRound(p, 9) > pyRound(post[rec], 9)) rec = g; }); }
   const ranked = post.map((p, g) => g).sort((a, b) => (pyRound(post[b], 9) - pyRound(post[a], 9)) || (a - b));
   const answered = new Set(picks.map(([qi]) => qi));
-  const remaining = c.questions.map((q, i) => i).filter((i) => !answered.has(i));
+  const eligible = (i) => !c.questions[i].finalists.length || fsum(c.questions[i].finalists.map((g) => post[g])) >= s.tiebreak_mass;
+  const remaining = c.questions.map((q, i) => i).filter((i) => !answered.has(i) && eligible(i));
   const limit = Math.min(s.max_questions, c.questions.length);
   const parts = model.confidenceParts(post, rec, s.class_credit, s.role_credit);
   const confidence = parts.overall;

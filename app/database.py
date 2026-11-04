@@ -64,7 +64,8 @@ CREATE TABLE IF NOT EXISTS questions (
     low_label     TEXT NOT NULL DEFAULT 'Strongly disagree',
     high_label    TEXT NOT NULL DEFAULT 'Strongly agree',
     rationale     TEXT NOT NULL DEFAULT '',
-    min_length    TEXT NOT NULL DEFAULT 'long'
+    min_length    TEXT NOT NULL DEFAULT 'long',
+    finalists     TEXT NOT NULL DEFAULT '[]'              -- JSON list of 'class/spec' keys: a tiebreaker for these finalists
 );
 
 CREATE TABLE IF NOT EXISTS answers (
@@ -185,6 +186,7 @@ _ADDED_COLUMNS = (
     ("questions", "high_label", "TEXT NOT NULL DEFAULT 'Strongly agree'"),
     ("questions", "rationale", "TEXT NOT NULL DEFAULT ''"),
     ("questions", "min_length", "TEXT NOT NULL DEFAULT 'long'"),
+    ("questions", "finalists", "TEXT NOT NULL DEFAULT '[]'"),
     ("classes", "overview", "TEXT NOT NULL DEFAULT ''"),
     ("classes", "overview_url", "TEXT NOT NULL DEFAULT ''"),
     ("specializations", "overview", "TEXT NOT NULL DEFAULT ''"),

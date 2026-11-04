@@ -86,6 +86,11 @@ class Model:
         total = fsum(w)
         return [x / total for x in w]
 
+    def eligible(self, post, qi: int, tiebreak_mass: float) -> bool:
+        """An ordinary question is always a candidate; a tiebreaker only when its finalists together hold at least ``tiebreak_mass``."""
+        finalists = self.c.questions[qi].finalists
+        return not finalists or fsum(post[g] for g in finalists) >= tiebreak_mass
+
     def confidence_parts(self, post, rec: int, class_credit: float, role_credit: float) -> ConfidenceParts:
         """How sure the model is of ``rec``: its own probability, its class's, its role's, and the combined confidence.
 
@@ -168,7 +173,7 @@ def status(c: Compiled, answers: dict[str, str], settings: Optional[AdaptiveSett
     rec = recommended_type(c, picks) if picks else max(range(model.n_types), key=lambda g: (round(post[g], 9), -g))
     order = sorted(range(model.n_types), key=lambda g: (-round(post[g], 9), g))
     answered_q = {qi for qi, _ in picks}
-    remaining = [qi for qi in range(len(c.questions)) if qi not in answered_q]
+    remaining = [qi for qi in range(len(c.questions)) if qi not in answered_q and model.eligible(post, qi, s.tiebreak_mass)]
     limit = min(s.max_questions, len(c.questions))
     parts = model.confidence_parts(post, rec, s.class_credit, s.role_credit)
     confidence = parts.overall

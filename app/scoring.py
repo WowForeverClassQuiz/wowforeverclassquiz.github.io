@@ -166,6 +166,7 @@ class CQuestion:
     class_delta: tuple[tuple[float, ...], ...]
     trait_delta: tuple[tuple[float, ...], ...]
     spec_delta: tuple[tuple[float, ...], ...]
+    finalists: tuple[int, ...] = ()  # tiebreaker: global specialization indexes of the finalists (empty: an ordinary question)
 
 
 @dataclass(frozen=True)
@@ -276,6 +277,7 @@ def compile_config(config: Config) -> Compiled:
                 text=q.text,
                 type=q.type,
                 length_rank=TIERS.index(q.min_length),
+                finalists=tuple(spec_keys.index(k) for k in q.finalists if k in spec_keys),
                 item_ids=tuple(a.id for a in q.answers),
                 answer_ids=tuple(r[0] for r in table),
                 answer_texts=tuple(r[1] for r in table),

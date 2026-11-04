@@ -170,6 +170,7 @@ class Simulator:
         self.tcl = np.array([ci for ci, cl in enumerate(c.classes) for _ in cl.specs])
         self.same_class = self.tcl[:, None] == self.tcl[None, :]
         self.same_role = np.array([[bool(a & b) for b in roles] for a in roles])
+        self.finalists = [list(q.finalists) for q in c.questions]          # tiebreakers: asked only when these hold most of the probability
         self.onehot = np.zeros((self.nt, c.n_classes))
         self.onehot[np.arange(self.nt), self.tcl] = 1.0
 
@@ -244,13 +245,17 @@ class Simulator:
         while remaining:
             w = np.exp(lp - lp.max())
             post = w / w.sum()
+            mass = self.c.adaptive.tiebreak_mass
+            pool = [q for q in remaining if not self.finalists[q] or post[self.finalists[q]].sum() >= mass]
+            if not pool:
+                break
             if order == "adaptive":
-                g = self.gains(post, remaining)
-                q = remaining[int(np.argmax(np.round(g, 9)))]
+                g = self.gains(post, pool)
+                q = pool[int(np.argmax(np.round(g, 9)))]
             elif order == "fixed":
-                q = remaining[0]
+                q = pool[0]
             else:
-                q = remaining[int(np.argmax(self.rule_scores(post, remaining, order, lead)))]
+                q = pool[int(np.argmax(self.rule_scores(post, pool, order, lead)))]
             remaining.remove(q)
             answer_p = truth if truth is not None else self.p          # how respondents really answer; the Oracle still assumes self.p
             probs = answer_p[q][:, tau] if (tau is not None and answer == "model") else np.full(self.p[q].shape[0], 1 / self.p[q].shape[0])
@@ -277,7 +282,7 @@ class Simulator:
             final = (rec, overall, int(post.argmax()))
         earned = float(self.credit(final[0])[tau]) if tau is not None else 0.0
         return {"n": stopped_at, "conf": final[1], "right": (tau is not None and final[0] == tau), "earned": earned,
-                "class_right": bool(tau is not None and self.tcl[final[0]] == self.tcl[tau]), "mode": final[2], "confs": confs, "ents": ents}
+                "class_right": bool(tau is not None and self.tcl[final[0]] == self.tcl[tau]), "mode": final[2], "confs": confs, "ents": ents, "asked": asked}
 
 
 def cohort(sim: Simulator, n: int, seed: int, **kw):
@@ -559,7 +564,8 @@ def build(cfg: Config, out: Path, quick: bool = False) -> dict:
                      ["Class sharpness", "λ<sub>c</sub>", f"{ad.sharpness_class:g}", "how strongly class weights steer an answer"],
                      ["Specialization sharpness", "λ<sub>s</sub>", f"{ad.sharpness_spec:g}", "how strongly a profile steers an answer"],
                      ["Credit for the same class", "c", f"{ad.class_credit:g}", "weight of another specialization of the recommended class in the confidence"],
-                     ["Credit for a similar role", "r", f"{ad.role_credit:g}", "weight of a specialization sharing a role with the recommended one"]],
+                     ["Credit for a similar role", "r", f"{ad.role_credit:g}", "weight of a specialization sharing a role with the recommended one"],
+                     ["Tiebreaker share", "m", pct(ad.tiebreak_mass, 0), "probability a tiebreaker's finalists must hold before it is asked"]],
                     widths=[1.7 * inch, 0.8 * inch, 0.8 * inch, WIDTH - 3.3 * inch], align_right_from=-1),
               P("<b>Table 11.</b> Confidence-mode settings (admin: Profiles & Settings).", SMALL)]
 
@@ -603,8 +609,8 @@ def build(cfg: Config, out: Path, quick: bool = False) -> dict:
     for order in curves:
         for _ in range(max(30, n_sim // 4)):
             curves[order].append(sim.run(rng, tau=int(rng.integers(27)), order=order, stop=(31, 31, 1.0), full=True))
-    ent = {k: np.mean([r["ents"] for r in v], axis=0) for k, v in curves.items()}
-    cf = {k: np.mean([r["confs"] for r in v], axis=0) for k, v in curves.items()}
+    ent = {k: np.mean([r["ents"][:30] for r in v], axis=0) for k, v in curves.items()}
+    cf = {k: np.mean([r["confs"][:30] for r in v], axis=0) for k, v in curves.items()}
 
     def draw_curve(ax):
         xs = np.arange(1, 31)
@@ -721,13 +727,14 @@ def build(cfg: Config, out: Path, quick: bool = False) -> dict:
         rows += [[f"{type_name[a]} and {type_name[b]}", f"{e0:.1f}", f"{e1:.1f}"] for e0, e1, a, b in within[:8]]
         mean_q = lambda idx: float(np.mean([pair_evidence([q]).sum() / (sim.nt * (sim.nt - 1)) for q in idx]))
         n_class = sum(1 for q in c.questions if q.id in CLASS_ORDER)
-        n_spec = len(extra_idx) - n_class
+        n_tb = sum(1 for q in c.questions if q.finalists)
+        n_spec = len(extra_idx) - n_class - n_tb
         story += [P(f"8.9&nbsp;&nbsp;Why the pool has {sim.nq} questions", H2),
                   P(f"The {len(core_idx)} questions of the fixed quizzes separate classes well and separate the specializations of one class poorly. Measured as the total evidence a pool can give about "
                     "a pair of types (the sum over questions of the symmetric Kullback-Leibler divergence between how the two types answer, in nats), the weakest pairs are all within one class, "
                     f"and the median within-class pair has {np.median([w[0] for w in within]):.0f} nats of evidence against {np.median([ev_core[a, b] for a in range(sim.nt) for b in range(a + 1, sim.nt) if type_class[a] != type_class[b]]):.0f} across classes. "
                     f"{n_spec} of the confidence-mode-only questions (two for each class, a role question and a distance question) are aimed at that gap and raise the median within-class pair to "
-                    f"{np.median([w[1] for w in within]):.0f} nats. A question in the fixed quizzes carries {mean_q(core_idx):.2f} nats per pair on average and one of the added ones {mean_q([i for i in extra_idx if c.questions[i].id not in CLASS_ORDER]):.2f}, "
+                    f"{np.median([w[1] for w in within]):.0f} nats. A question in the fixed quizzes carries {mean_q(core_idx):.2f} nats per pair on average and one of the added ones {mean_q([i for i in extra_idx if c.questions[i].id not in CLASS_ORDER and not c.questions[i].finalists]):.2f}, "
                     "so the gain comes from covering the weak pairs. No weight was made heavier to get there."),
                   table(rows, widths=[3.2 * inch, 1.6 * inch, WIDTH - 4.8 * inch], align_right_from=-1),
                   P("<b>Table 19.</b> The eight within-class pairs the fixed-quiz questions separate least, before and after the added questions.", SMALL)]
@@ -751,6 +758,41 @@ def build(cfg: Config, out: Path, quick: bool = False) -> dict:
                         f"They carry {np.mean([ev_cls[i].sum() / 72 for i in range(sim.nq) if c.questions[i].id in CLASS_ORDER]):.2f} nats per class pair against {np.mean([ev_cls[i].sum() / 72 for i in core_idx]):.2f} for the fixed-quiz questions: a little more, because each answer names a class no other answer does."),
                       table(rows, widths=[2.6 * inch, 1.3 * inch, 1.0 * inch, WIDTH - 4.9 * inch], align_right_from=-1),
                       P("<b>Table 20.</b> Questions that separate every class of a trio, by trio.", SMALL)]
+
+    # ---- tiebreakers
+    n_tb = sum(1 for q in c.questions if q.finalists)
+    if n_tb:
+        print("simulating tiebreakers ...", flush=True)
+        plain_cfg = cfg.model_copy(deep=True)
+        plain_cfg.questions = [q for q in plain_cfg.questions if not q.finalists]
+        sim_plain = Simulator(plain_cfg)
+        rows = [["Respondents are", "Question pool", "Mean questions", "Credit earned", "Exact specialization right", "Runs that asked a tiebreaker"]]
+        for k in (1.0, 0.7, 0.5):
+            truth_full = Simulator(cfg, sharp_spec=ad.sharpness_spec * k, sharp_class=ad.sharpness_class * k).p
+            truth_plain = Simulator(plain_cfg, sharp_spec=ad.sharpness_spec * k, sharp_class=ad.sharpness_class * k).p
+            for label, s_, tr in ((f"{sim_plain.nq} questions, no tiebreakers", sim_plain, truth_plain), (f"all {sim.nq} questions", sim, truth_full)):
+                r = cohort(s_, n_rules, 707, truth=tr)
+                used = float(np.mean([any(s_.finalists[q] for q in run["asked"]) for run in r["runs"]]))
+                rows.append([f"{pct(k, 0)} as consistent as assumed", label, f"{r['mean_n']:.1f}", pct(r["earned"]), pct(r["accuracy"]), pct(used, 0) if used else "none"])
+        pair_kl = lambda qi, a, b: float(np.sum(sim.p[qi][:, a] * np.log(sim.p[qi][:, a] / sim.p[qi][:, b]) + sim.p[qi][:, b] * np.log(sim.p[qi][:, b] / sim.p[qi][:, a])))
+        between = lambda qi, specs: float(np.mean([pair_kl(qi, a, b) for i, a in enumerate(specs) for b in specs[i + 1:]]))
+        tb_idx = [i for i, q in enumerate(c.questions) if q.finalists]
+        base_idx = [i for i, q in enumerate(c.questions) if q.length_rank >= len(LENGTHS) and q.type == "choice" and not q.finalists and q.id not in CLASS_ORDER and len(q.answer_ids) == 3]
+        base_ev = [between(i, [g for g in range(sim.nt) if sim.tcl[g] == int(np.argmax(np.min(np.array(c.questions[i].class_raw), axis=0)))]) for i in base_idx]
+        tb_ev = [between(i, list(c.questions[i].finalists)) for i in tb_idx]
+        n3 = sum(1 for i in tb_idx if len(c.questions[i].finalists) == 3)
+        story += [P("8.10&nbsp;&nbsp;Tiebreaker questions: forcing a decision between the finalists", H2),
+                  P(f"When the Oracle has narrowed a reading to two or three candidates, the useful question is the one that forces a choice among exactly those. There are {n_tb} such "
+                    f"<b>tiebreakers</b>: {n3} for groups of three specializations (the three specializations of each class, and eight groups that share a role, such as the three tanks: "
+                    "“do you trust more in the light to guard, the structure and workmanship of steel, or the strength of the wild?”) and "
+                    f"{n_tb - n3} two-way questions for the closest pairs of finalists that no three-way question covers. Each lists its <i>finalists</i>, and it is eligible only when those specializations "
+                    f"together hold at least m = {pct(ad.tiebreak_mass, 0)} of the posterior probability (Table 10), so none is asked early, when nothing has narrowed, or out of place. Two of three finalists are enough, "
+                    "so a three-way question also serves when only the top two remain. Among the eligible questions the Oracle still picks the one with the largest information gain, which a question "
+                    "built to separate the finalists usually is."),
+                  table(rows, widths=[1.5 * inch, 1.6 * inch, 0.75 * inch, 0.75 * inch, 0.9 * inch, WIDTH - 5.5 * inch]),
+                  P(f"<b>Table 21.</b> The pool with and without the tiebreakers, under the model. They save a fraction of a question and leave the accuracy where it was. "
+                    f"A forced choice separates its finalists more sharply than a four-way question does (a mean of {np.mean(tb_ev):.1f} nats between finalists, against {np.mean(base_ev):.1f} for the comparable "
+                    "within-class questions) because each answer is one of only two or three, and no weight was made heavier to get there.", SMALL)]
 
     # ================================================================ 9 worked example
     print("worked example ...", flush=True)
@@ -777,7 +819,7 @@ def build(cfg: Config, out: Path, quick: bool = False) -> dict:
               P("A fixed example respondent taking the quiz in confidence mode: a person of type Druid Feral Combat who always gives the response the model finds most likely for that type. "
                 "At each step the table shows which question the Oracle chose, the response, how much information it expected from it, and where the posterior stood after the answer."),
               table(rows, widths=[0.3 * inch, 0.7 * inch, 0.8 * inch, 0.85 * inch, 0.85 * inch, 1.65 * inch, 0.85 * inch, WIDTH - 6.0 * inch], align_right_from=-1, font=7.2),
-              P(f"<b>Table 21.</b> The example run stops after {fin.answered} questions with {pct(fin.confidence)} confidence in {fin.recommended.class_name} {fin.recommended.specialization_name}. "
+              P(f"<b>Table 22.</b> The example run stops after {fin.answered} questions with {pct(fin.confidence)} confidence in {fin.recommended.class_name} {fin.recommended.specialization_name}. "
                 "The five most probable types at the end:", SMALL)]
     rows = [["Type", "Probability"]] + [[f"{t.class_name} {t.specialization_name}", pct(t.probability, 2)] for t in fin.top]
     story += [table(rows, widths=[2.6 * inch, 1.2 * inch])]

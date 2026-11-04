@@ -258,7 +258,7 @@ def test_the_adaptive_endpoint(client, feral):
     r = client.post(f"{API}/evaluate", json={"answers": answers, "length": "adaptive"})
     assert r.status_code == 200 and r.json()["metadata"]["quiz_length"] == "adaptive"
     assert client.post(f"{API}/evaluate", json={"answers": {}, "length": "adaptive"}).status_code == 400
-    assert client.post(f"{API}/adaptive/next", json={"answers": {"q99": "a"}}).status_code == 400
+    assert client.post(f"{API}/adaptive/next", json={"answers": {"q999": "a"}}).status_code == 400
     assert client.post(f"{API}/adaptive/next", json={"answers": {"q09": "nonsense"}}).status_code == 400
 
 
@@ -266,7 +266,7 @@ def test_confidence_mode_is_the_default_and_the_first_option(client):
     quiz = client.get(f"{API}/quiz").json()
     assert quiz["default_length"] == "adaptive" and [l["id"] for l in quiz["lengths"]] == ["adaptive", "short", "medium", "long"]
     ad = quiz["lengths"][0]
-    assert ad["adaptive"] is True and (ad["min_questions"], ad["max_questions"], ad["confidence"]) == (1, 30, 0.9) and len(ad["question_ids"]) == 74
+    assert ad["adaptive"] is True and (ad["min_questions"], ad["max_questions"], ad["confidence"]) == (1, 30, 0.9) and len(ad["question_ids"]) == 103
 
 
 def test_the_confidence_option_describes_itself_once(cfg):

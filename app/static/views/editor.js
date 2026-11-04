@@ -103,6 +103,10 @@ function draw() {
   const lengthField = h("label", { class: "field", style: { marginTop: "12px" } }, "Asked in",
     lengthSelect, h("small", {}, `Currently the short quiz asks ${countFor("short")} questions, the medium ${countFor("medium")} and the long ${countFor("long")}; confidence mode can draw on all ${countFor("adaptive")}. Changing this can unbalance a length: check Simulation > batch for it.`));
 
+  const tiebreaker = (q.finalists || []).length
+    ? h("p", { class: "muted", style: { marginTop: "12px", fontSize: "0.88rem" } }, `Tiebreaker: confidence mode asks this only when ${q.finalists.join(", ")} together hold the probability set in Profiles & Settings. Edit the finalists in an exported configuration or through PATCH /questions/${q.id}.`)
+    : null;
+
   root.append(
     h("div", { class: "page-head" },
       h("div", {}, h("h1", {}, "Question Editor"),
@@ -115,6 +119,7 @@ function draw() {
       h("p", { class: "note", style: { marginTop: "10px" } }, TYPE_HELP[q.type] || ""),
       field("text", 2, q.type === "scale" ? "Statement shown to the participant" : "Question text"),
       lengthField,
+      tiebreaker,
       q.type === "scale" ? h("div", { class: "grid two" }, field("low_label", 1, "Label at rating 1"), field("high_label", 1, "Label at rating 10")) : null,
       field("rationale", 3, "Why the weights are what they are (administrator note, never shown to participants)"),
       h("div", { class: "row", style: { marginTop: "10px" } }, saveQ, discardQ)),
