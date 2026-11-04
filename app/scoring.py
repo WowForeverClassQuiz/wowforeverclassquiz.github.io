@@ -167,6 +167,7 @@ class CQuestion:
     trait_delta: tuple[tuple[float, ...], ...]
     spec_delta: tuple[tuple[float, ...], ...]
     finalists: tuple[int, ...] = ()  # tiebreaker: global specialization indexes of the finalists (empty: an ordinary question)
+    opener: bool = False  # confidence mode may open with this question
 
 
 @dataclass(frozen=True)
@@ -278,6 +279,7 @@ def compile_config(config: Config) -> Compiled:
                 type=q.type,
                 length_rank=TIERS.index(q.min_length),
                 finalists=tuple(spec_keys.index(k) for k in q.finalists if k in spec_keys),
+                opener=q.opener,
                 item_ids=tuple(a.id for a in q.answers),
                 answer_ids=tuple(r[0] for r in table),
                 answer_texts=tuple(r[1] for r in table),
@@ -422,7 +424,8 @@ def _response_table(q: Question) -> list[tuple[str, str, dict, dict, dict]]:
 Picks = list[tuple[int, int]]  # (question index, answer index), sorted by question
 
 
-def resolve_answers(c: Compiled, answers: dict[str, str], active: Optional[Sequence[int]] = None, length: str = "long") -> Picks:
+def resolve_answers(c: Compiled, answers: dict[str, str], active: Optional[Sequence[int]] = None, length: str = "long", keep_order: bool = False) -> Picks:
+    """The (question index, response index) of every answer. Sorted by question unless ``keep_order``, which keeps the order they were given in."""
     picks: Picks = []
     for qid, aid in answers.items():
         qi = c.q_index.get(qid)
@@ -438,7 +441,8 @@ def resolve_answers(c: Compiled, answers: dict[str, str], active: Optional[Seque
         if aid not in q.answer_ids:
             raise UnknownAnswerError(f"Question '{qid}' has no answer '{aid}'.")
         picks.append((qi, q.answer_ids.index(aid)))
-    picks.sort()
+    if not keep_order:
+        picks.sort()
     return picks
 
 
@@ -672,15 +676,18 @@ def evaluate(
         label = "Clear lean"
     else:
         label = "Close call"
-    from .adaptive import Model     # imported here: adaptive.py builds on this module
+    from .adaptive import Model, question_factor     # imported here: adaptive.py builds on this module
     model = Model(c)
     parts = model.confidence_parts(model.posterior(picks), p_spec.gidx, c.adaptive.class_credit, c.adaptive.role_credit)
+    factor = question_factor(len(picks), c.adaptive.question_scaling)       # a result states the current confidence, scaled; only the meter keeps the best so far
+    stated = factor * parts.overall
     confidence = Confidence(
         label=label,
         probability=_o(parts.spec),
         class_probability=_o(parts.class_),
         role_probability=_o(parts.role),
-        overall=_o(parts.overall),
+        overall=_o(stated),
+        question_factor=_o(factor),
         role=p_spec.role,
         class_gap=_o(gap),
         strong_margin=strong_margin,

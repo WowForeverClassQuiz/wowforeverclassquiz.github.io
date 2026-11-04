@@ -29,7 +29,7 @@ function savedForm(key) {
   const ad = cfg.scoring.adaptive;
   return {
     strong: cfg.scoring.confidence_margins.strong, moderate: cfg.scoring.confidence_margins.moderate, order: [...cfg.scoring.class_tie_break_order],
-    adaptive: { enabled: ad.enabled, min: ad.min_questions, max: ad.max_questions, confidence: Math.round(ad.confidence * 10000) / 100, lc: ad.sharpness_class, ls: ad.sharpness_spec, cc: ad.class_credit, rc: ad.role_credit, tm: ad.tiebreak_mass },
+    adaptive: { enabled: ad.enabled, min: ad.min_questions, max: ad.max_questions, confidence: Math.round(ad.confidence * 10000) / 100, lc: ad.sharpness_class, ls: ad.sharpness_spec, cc: ad.class_credit, rc: ad.role_credit, tm: ad.tiebreak_mass, qs: ad.question_scaling, ro: ad.random_opening },
   };
 }
 const specForm = (s) => ({ description: s.description, overview: s.overview || "", rows: Object.entries(s.trait_multipliers).map(([t, m]) => [t, m]) });
@@ -132,15 +132,17 @@ function scoringCard() {
         num("Stop at confidence (%)", "confidence", { min: "1", max: "99", step: "1" }),
         num("Class sharpness", "lc", { min: "0.05", step: "0.05" }), num("Specialization sharpness", "ls", { min: "0.05", step: "0.05" }),
         num("Credit for the same class (0 to 1)", "cc", { min: "0", max: "1", step: "0.05" }), num("Credit for a similar role (0 to 1)", "rc", { min: "0", max: "1", step: "0.05" }),
-        num("Probability the finalists must hold for a tiebreaker (0 to 1)", "tm", { min: "0.05", max: "1", step: "0.05" }))),
+        num("Probability the finalists must hold for a tiebreaker (0 to 1)", "tm", { min: "0.05", max: "1", step: "0.05" }),
+        num("Question scaling k (confidence is scaled by n / (n + k); 0 turns it off)", "qs", { min: "0", max: "10", step: "0.1" })),
+      h("label", { class: "row" }, h("input", { type: "checkbox", checked: a.ro, "aria-label": "Open with a random personality question", onchange: (e) => { a.ro = e.target.checked; card.refresh(); } }), "Open with a random personality question")),
     h("div", { class: "grid two" },
       h("div", { class: "stack" }, h("h4", {}, "Confidence descriptor margins"),
-        h("p", { class: "muted", style: { fontSize: "0.88rem" } }, "Heuristic wording based on the gap between the top two class scores. Not a statistical estimate."),
+        h("p", { class: "muted", style: { fontSize: "0.88rem" } }, "Heuristic wording based on the gap between the top two class scores."),
         h("div", { class: "row" }, field("“Strong lean” at gap ≥", strong), field("“Clear lean” at gap ≥", moderate))),
       h("div", {}, h("h4", {}, "Class tie-break order"), h("p", { class: "muted", style: { fontSize: "0.88rem" } }, "Equal class scores resolve in this order (top wins)."), list)),
     actions(key, card, () => save(key, () => patch("/scoring", { expected_revision: cfg.revision, confidence_margins: { strong: d.strong, moderate: d.moderate }, class_tie_break_order: d.order,
       adaptive: { enabled: d.adaptive.enabled, min_questions: d.adaptive.min, max_questions: d.adaptive.max, confidence: d.adaptive.confidence / 100,
-        sharpness_class: d.adaptive.lc, sharpness_spec: d.adaptive.ls, class_credit: d.adaptive.cc, role_credit: d.adaptive.rc, tiebreak_mass: d.adaptive.tm } }), "Scoring settings saved")));
+        sharpness_class: d.adaptive.lc, sharpness_spec: d.adaptive.ls, class_credit: d.adaptive.cc, role_credit: d.adaptive.rc, tiebreak_mass: d.adaptive.tm, question_scaling: d.adaptive.qs, random_opening: d.adaptive.ro } }), "Scoring settings saved")));
   return card;
 }
 

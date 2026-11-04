@@ -80,13 +80,16 @@
   const until = async (test, ms = 4000) => { for (let t = 0; t < ms && !test(); t += 50) await sleep(50); return test(); };
   check("confidence mode is offered first and says how it works", /Confidence/.test(document.querySelector(".lengths").innerText) && /Up to 30 questions/.test(document.querySelector(".lengths").innerText));
   document.getElementById("begin").click(); await sleep(500);
-  let asked = 0, sawLabel = "", sawDetail = "", moved = 0, movedOnChoice = 0;
+  let asked = 0, sawLabel = "", sawDetail = "", moved = 0, movedOnChoice = 0, openedWith = "";
+  const meters = [];
   const meter = () => document.querySelector(".certainty-bar")?.getAttribute("aria-valuenow");
   for (let guard = 0; guard < 40; guard++) {
     await until(() => document.querySelector(".question"));
     const q = byId[idByText[document.querySelector(".question").textContent]];
     const before = meter();
+    meters.push(before);
     await respond(q, MODAL[q.id]);
+    if (asked === 0) openedWith = q.id;
     asked++;
     await until(() => document.getElementById("reveal") || (document.getElementById("next") && !document.getElementById("next").disabled));
     sawLabel = document.getElementById("certainty-label")?.textContent || sawLabel;
@@ -98,12 +101,20 @@
   }
   check("the meter never moves when an answer is chosen, only when the next question comes", movedOnChoice === 0 && moved > 0, `moved on choice ${movedOnChoice}, moved on next ${moved}`);
   check("the meter also shows the class, specialization and role odds", /\d+% · .+ \d+% · .+ \d+%/.test(sawDetail), sawDetail);
+  const openerIds = (await (await fetch("/api/v1/adaptive/next", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ answers: {} }) })).json()).openers;
+  check("confidence mode opened with one of the personality questions", openerIds.length > 40 && openerIds.includes(openedWith), openedWith);
+  check("the Oracle reads 0% before the first answer and its meter never falls", meters[0] === "0" && meters.every((v, i) => i === 0 || Number(v) >= Number(meters[i - 1])) && Number(meters[meters.length - 1]) > 0, meters.join(" "));
   check("it showed how sure it was while asking", /The Oracle is \d+% sure/.test(sawLabel) && !!document.querySelector(".certainty-bar .tick"), sawLabel);
   check("it stopped as soon as it was sure, well before the limit of thirty", asked >= 1 && asked < 15, asked);
   document.getElementById("reveal").click(); await sleep(2200);
   page = document.getElementById("view").innerText;
   check("the result is a confidence reading on the questions it asked", /Confidence reading/.test(page) && new RegExp(`${asked} questions`).test(page), asked);
   check("the result shows the class, specialization and role odds", /gives .+ \d+%, .+ \d+% and .+ \d+%/.test(document.getElementById("confidence-detail")?.textContent || ""), document.getElementById("confidence-detail")?.textContent);
+  const shareMain = document.getElementById("share-main"), shareHero = document.querySelector(".result-hero");
+  check("a prominent Share my results! button sits at the top of the result, inside the hero", !!shareMain && /Share my results!/.test(shareMain.textContent) && !!shareHero && shareHero.contains(shareMain) && shareMain.classList.contains("primary"));
+  check("the share bar also offers the clipboard, X, Reddit and email", !!document.getElementById("share-top-copy") && ["share-x", "share-reddit", "share-email"].every((id) => (document.getElementById(id)?.getAttribute("href") || "").length > 20));
+  document.getElementById("share-top-copy").click(); await sleep(500);
+  check("copying from the top of the result says so", /Copied|Copy failed/.test(document.getElementById("toasts")?.innerText || ""), document.getElementById("toasts")?.innerText);
   check("the result states the model's confidence", /\d+% sure/.test(page) && (Number(/(\d+)% sure/.exec(page)[1]) >= 90), /(\d+)% sure/.exec(page)?.[0]);
   check("the confidence reading found Feral Combat Druid, like the full quiz", document.querySelector(".result-hero h1")?.textContent === "Druid" && document.querySelector(".result-hero h2")?.textContent === "Feral Combat");
   check("a confidence reading offers no sharpening step", !document.getElementById("refine"));

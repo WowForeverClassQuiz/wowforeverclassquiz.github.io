@@ -141,7 +141,7 @@ export function prepare(data) {
 // Evaluation
 // ---------------------------------------------------------------------------------------------------------------
 
-function resolveAnswers(c, answers, active, length) {
+function resolveAnswers(c, answers, active, length, keepOrder = false) {
   const picks = [];
   for (const [qid, given] of Object.entries(answers || {})) {
     const qi = c.qIndex.get(qid);
@@ -159,7 +159,7 @@ function resolveAnswers(c, answers, active, length) {
     if (ai < 0) throw new ScoringError("unknown_answer", `Question '${qid}' has no answer '${aid}'.`);
     picks.push([qi, ai]);
   }
-  return picks.sort((a, b) => a[0] - b[0]);
+  return keepOrder ? picks : picks.sort((a, b) => a[0] - b[0]);
 }
 
 /** Stable ordering by descending rounded score, then by the given tie-break key. */
@@ -287,6 +287,8 @@ export function evaluate(c, answers, { allowPartial = false, length = "long" } =
   const pSpec = pCls.specs.find((s) => s.id === primaryPick.id);
   const model = adaptiveModel(c);
   const confidenceParts = model.confidenceParts(model.posterior(picks), pSpec.gidx, c.adaptive.class_credit, c.adaptive.role_credit);
+  const qFactor = questionFactor(picks.length, c.adaptive.question_scaling);       // a result states the current confidence, scaled; only the meter keeps the best so far
+  const stated = qFactor * confidenceParts.overall;
   const weighed = pSpec.terms.map(([t, m]) => `${c.traits[t].name} (×${formatG(m)})`).join(", then ");
   const scored = pSpec.terms.map(([t]) => signed(traitTotals[t])).join(", ");
   const specReading = `${pSpec.description} The ${pCls.name} ${pSpec.name} profile weighs ${weighed}; `
@@ -313,7 +315,8 @@ export function evaluate(c, answers, { allowPartial = false, length = "long" } =
       probability: o(confidenceParts.spec),
       class_probability: o(confidenceParts.class),
       role_probability: o(confidenceParts.role),
-      overall: o(confidenceParts.overall),
+      overall: o(stated),
+      question_factor: o(qFactor),
       role: pSpec.role,
       class_gap: o(gap),
       strong_margin: strongMargin,
@@ -426,6 +429,46 @@ export function adaptiveModel(c) {
   return c.__model;
 }
 
+/** Until the Oracle is actually sure, the stated confidence stays at least this far below the threshold. */
+const HEADROOM = 0.01;
+/** The top of the stated scale is compressed from this far below the threshold up, so the figure still rises as it nears it. */
+const SOFT_BAND = 0.10;
+
+/** Squeeze the part of the scale above theta - SOFT_BAND into the band below theta - HEADROOM, smoothly; see adaptive.compress. */
+function compress(x, theta) {
+  const cap = Math.max(theta - HEADROOM, 0);
+  const start = Math.max(theta - SOFT_BAND, 0);
+  if (x <= start || cap <= start) return Math.min(x, cap);
+  const width = cap - start;
+  return start + width * Math.tanh((x - start) / width);
+}
+
+/** What n questions earn of the confidence: n / (n + scaling); 0 before the first answer, 1 for every n when scaling is 0. */
+function questionFactor(n, scaling) {
+  if (n <= 0) return 0;
+  return scaling > 0 ? n / (n + scaling) : 1;
+}
+
+/** The unscaled confidence after each answer, in the order the answers were given. */
+function confidenceTrace(c, model, orderedPicks, s) {
+  const out = [];
+  for (let m = 1; m <= orderedPicks.length; m++) {
+    const prefix = orderedPicks.slice(0, m).sort((a, b) => a[0] - b[0]);
+    out.push(model.confidenceParts(model.posterior(prefix), recommendedType(c, prefix), s.class_credit, s.role_credit).overall);
+  }
+  return out;
+}
+
+/** [stated, current, factor] from the unscaled confidence after each answer; see adaptive.stated_confidence. */
+function statedConfidence(trace, s) {
+  const n = trace.length;
+  if (!n) return [0, 0, 0];
+  const factor = questionFactor(n, s.question_scaling);
+  const current = factor * trace[n - 1];
+  if (current >= s.confidence) return [current, current, factor];
+  return [compress(factor * Math.max(...trace), s.confidence), current, factor];
+}
+
 /** The specialization (global index) the scoring recommends for these picks: best class, then best specialization in it. */
 function recommendedType(c, picks) {
   const nc = c.classes.length, nt = c.traits.length;
@@ -461,19 +504,22 @@ export function adaptiveStatus(c, answers) {
   const remaining = c.questions.map((q, i) => i).filter((i) => !answered.has(i) && eligible(i));
   const limit = Math.min(s.max_questions, c.questions.length);
   const parts = model.confidenceParts(post, rec, s.class_credit, s.role_credit);
-  const confidence = parts.overall;
+  const ordered = resolveAnswers(c, answers, c.questions.map((q, i) => i), "long", true);
+  const [stated, current, factor] = n ? statedConfidence([...confidenceTrace(c, model, ordered.slice(0, -1), s), parts.overall], s) : [0, 0, 0];
   let done, reason = null;
-  if (n >= s.min_questions && confidence >= s.confidence) { done = true; reason = "confident"; }
+  if (n >= s.min_questions && current >= s.confidence) { done = true; reason = "confident"; }
   else if (n >= limit || !remaining.length) { done = true; reason = "limit"; }
   else done = false;
   const [nxt, gain] = done ? [null, null] : model.bestQuestion(post, remaining);
+  const openers = n === 0 && s.random_opening && !done ? remaining.filter((i) => c.questions[i].opener).map((i) => c.questions[i].id) : [];
   const out = {
-    answered: n, min_questions: s.min_questions, max_questions: limit, threshold: s.confidence, confidence,
-    spec_probability: parts.spec, class_probability: parts.class, role_probability: parts.role, role: c.classes.flatMap((cl) => cl.specs).find((sp) => sp.gidx === rec).role,
+    answered: n, min_questions: s.min_questions, max_questions: limit, threshold: s.confidence, confidence: stated,
+    current_confidence: current, question_factor: factor, spec_probability: parts.spec, class_probability: parts.class, role_probability: parts.role, role: c.classes.flatMap((cl) => cl.specs).find((sp) => sp.gidx === rec).role,
     recommended: typeProbability(c, rec, parts.spec), top: ranked.slice(0, 5).map((g) => typeProbability(c, g, post[g])),
     entropy: model.entropy(post), done, can_reveal: n >= s.min_questions,
   };
   if (reason) out.reason = reason;
   if (nxt !== null) { out.next_question_id = c.questions[nxt].id; out.expected_gain = gain; }
+  out.openers = openers;
   return out;
 }

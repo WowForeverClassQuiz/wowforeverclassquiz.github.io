@@ -23,7 +23,7 @@ The "probabilities" are exact within the model; how well the model describes rea
 """
 from __future__ import annotations
 
-from math import exp, fsum, log
+from math import exp, fsum, log, tanh
 from typing import NamedTuple, Optional
 
 from .models import AdaptiveSettings, AdaptiveStatus, TypeProbability
@@ -149,6 +149,56 @@ def _type_probability(c: Compiled, g: int, p: float) -> TypeProbability:
     raise KeyError(g)
 
 
+#: Until the Oracle is actually sure, the stated confidence stays at least this far below the threshold.
+HEADROOM = 0.01
+#: The top of the stated scale is compressed from this far below the threshold up, so the figure still rises as it nears it.
+SOFT_BAND = 0.10
+
+
+def compress(x: float, theta: float) -> float:
+    """Squeeze the part of the scale above theta - SOFT_BAND into the band below theta - HEADROOM, smoothly, so it never reaches the threshold and never goes flat."""
+    cap = max(theta - HEADROOM, 0.0)
+    start = max(theta - SOFT_BAND, 0.0)
+    if x <= start or cap <= start:
+        return min(x, cap)
+    width = cap - start
+    return start + width * tanh((x - start) / width)
+
+
+def question_factor(n: int, scaling: float) -> float:
+    """What n questions earn of the confidence: n / (n + scaling). 0 before the first answer; 1 for every n when ``scaling`` is 0."""
+    if n <= 0:
+        return 0.0
+    return n / (n + scaling) if scaling > 0 else 1.0
+
+
+def confidence_trace(c: Compiled, model: Model, ordered_picks, s: AdaptiveSettings) -> list[float]:
+    """The unscaled confidence after each answer, in the order the answers were given (the scoring itself never depends on that order)."""
+    out = []
+    for m in range(1, len(ordered_picks) + 1):
+        prefix = sorted(ordered_picks[:m])
+        out.append(model.confidence_parts(model.posterior(prefix), recommended_type(c, prefix), s.class_credit, s.role_credit).overall)
+    return out
+
+
+def stated_confidence(trace: list[float], s: AdaptiveSettings) -> tuple[float, float, float]:
+    """(stated, current, factor) from the unscaled confidence after each answer.
+
+    The current confidence is the latest one scaled by the number of questions asked; the stopping rule tests it. The stated confidence is
+    the best one so far, scaled the same way, so it rises with every question. Above 80% (a tenth under the threshold) it is compressed
+    smoothly toward a point under the threshold, which only the current confidence can reach, so the Oracle never states that it is
+    sure while it is still asking and the figure never goes flat.
+    """
+    n = len(trace)
+    if not n:
+        return 0.0, 0.0, 0.0
+    factor = question_factor(n, s.question_scaling)
+    current = factor * trace[-1]
+    if current >= s.confidence:
+        return current, current, factor
+    return compress(factor * max(trace), s.confidence), current, factor
+
+
 def _role_of(c: Compiled, g: int) -> str:
     for cls in c.classes:
         for sp in cls.specs:
@@ -176,19 +226,21 @@ def status(c: Compiled, answers: dict[str, str], settings: Optional[AdaptiveSett
     remaining = [qi for qi in range(len(c.questions)) if qi not in answered_q and model.eligible(post, qi, s.tiebreak_mass)]
     limit = min(s.max_questions, len(c.questions))
     parts = model.confidence_parts(post, rec, s.class_credit, s.role_credit)
-    confidence = parts.overall
-    if n >= s.min_questions and confidence >= s.confidence:
+    ordered = resolve_answers(c, answers, keep_order=True)
+    stated, current, factor = stated_confidence(confidence_trace(c, model, ordered[:-1], s) + [parts.overall] if n else [], s)
+    if n >= s.min_questions and current >= s.confidence:
         done, reason = True, "confident"
     elif n >= limit or not remaining:
         done, reason = True, "limit"
     else:
         done, reason = False, None
     nxt, gain = (None, None) if done else model.best_question(post, remaining)
+    openers = [c.questions[qi].id for qi in remaining if c.questions[qi].opener] if (n == 0 and s.random_opening and not done) else []
     return AdaptiveStatus(
-        answered=n, min_questions=s.min_questions, max_questions=limit, threshold=s.confidence, confidence=confidence,
-        spec_probability=parts.spec, class_probability=parts.class_, role_probability=parts.role, role=_role_of(c, rec),
+        answered=n, min_questions=s.min_questions, max_questions=limit, threshold=s.confidence, confidence=stated,
+        current_confidence=current, question_factor=factor, spec_probability=parts.spec, class_probability=parts.class_, role_probability=parts.role, role=_role_of(c, rec),
         recommended=_type_probability(c, rec, parts.spec),
         top=[_type_probability(c, g, post[g]) for g in order[:5]],
         entropy=model.entropy(post), done=done, reason=reason, can_reveal=n >= s.min_questions,
-        next_question_id=c.questions[nxt].id if nxt is not None else None, expected_gain=gain,
+        next_question_id=c.questions[nxt].id if nxt is not None else None, expected_gain=gain, openers=openers,
     )

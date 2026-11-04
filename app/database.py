@@ -65,7 +65,8 @@ CREATE TABLE IF NOT EXISTS questions (
     high_label    TEXT NOT NULL DEFAULT 'Strongly agree',
     rationale     TEXT NOT NULL DEFAULT '',
     min_length    TEXT NOT NULL DEFAULT 'long',
-    finalists     TEXT NOT NULL DEFAULT '[]'              -- JSON list of 'class/spec' keys: a tiebreaker for these finalists
+    finalists     TEXT NOT NULL DEFAULT '[]',             -- JSON list of 'class/spec' keys: a tiebreaker for these finalists
+    opener        INTEGER NOT NULL DEFAULT 0              -- confidence mode may open with this question
 );
 
 CREATE TABLE IF NOT EXISTS answers (
@@ -187,6 +188,7 @@ _ADDED_COLUMNS = (
     ("questions", "rationale", "TEXT NOT NULL DEFAULT ''"),
     ("questions", "min_length", "TEXT NOT NULL DEFAULT 'long'"),
     ("questions", "finalists", "TEXT NOT NULL DEFAULT '[]'"),
+    ("questions", "opener", "INTEGER NOT NULL DEFAULT 0"),
     ("classes", "overview", "TEXT NOT NULL DEFAULT ''"),
     ("classes", "overview_url", "TEXT NOT NULL DEFAULT ''"),
     ("specializations", "overview", "TEXT NOT NULL DEFAULT ''"),

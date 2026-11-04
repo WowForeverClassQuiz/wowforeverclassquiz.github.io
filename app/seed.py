@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from .drafts import apply_drafts
 from .spec_guides import GUIDE_NOTE, GUIDES
-from .seed_classes import build_class_questions
+from .seed_classes import CLASS_ORDER, build_class_questions
 from .seed_extra import build_extra_questions
 from .seed_tiebreakers import build_tiebreaker_questions
 from .seed_tuning import CLASS_WEIGHTS, MIN_LENGTH, ORIGINAL_CLASS_PAIRS, SPEC_WEIGHTS, TYPE_CHANGES
@@ -35,7 +35,7 @@ from .models import (
     Trait,
 )
 
-ALGORITHM_VERSION = "1.7.0"
+ALGORITHM_VERSION = "1.8.0"
 
 # Multipliers for the primary, secondary and tertiary trait of the original three-trait profiles.
 SPEC_MULTIPLIERS = (1.5, 1.0, 0.45)
@@ -561,6 +561,8 @@ def build_default_config(include_drafts: bool = True) -> Config:
         q.min_length = MIN_LENGTH.get(q.id, "long")
     # q31 and up are asked only in confidence mode (q75 and up are tiebreakers); they carry their own weights and sit after the thirty fixed-quiz questions
     questions = [by_id[qid] for qid in QUESTION_ORDER] + build_extra_questions() + build_class_questions() + build_tiebreaker_questions()
+    for q in questions:       # confidence mode opens with a personality question: the thirty fixed-quiz questions and the class-separating questions
+        q.opener = q.min_length != "adaptive" or q.id in CLASS_ORDER
     builds = [
         Build(
             id=f"{cls.id}-{spec.id}-leveling".replace("_", "-"),

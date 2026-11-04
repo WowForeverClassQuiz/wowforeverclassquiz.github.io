@@ -240,7 +240,8 @@ class Simulator:
         mn, mx, conf = stop or (s.min_questions, s.max_questions, s.confidence)
         lp = np.zeros(self.nt)
         ct, tt, st = np.zeros(self.c.n_classes), np.zeros(self.c.n_traits), np.zeros(self.c.n_specs)
-        remaining, asked, confs, ents = list(range(self.nq)), [], [], []
+        remaining, asked, confs, ents, raws = list(range(self.nq)), [], [], [], []
+        scaling = s.question_scaling
         stopped_at, lead = None, 0
         while remaining:
             w = np.exp(lp - lp.max())
@@ -269,17 +270,20 @@ class Simulator:
             post = w / w.sum()
             rec = self.recommend(ct, tt, st)
             lead = rec
-            overall = float(post @ self.credit(rec))
-            confs.append(overall)
+            raws.append(float(post @ self.credit(rec)))
+            factor = len(asked) / (len(asked) + scaling) if scaling > 0 else 1.0
+            current = factor * raws[-1]
+            stated = current if current >= conf else adaptive_mod.compress(factor * max(raws), conf)          # the best certainty so far, scaled: it only rises
+            confs.append(stated)
             ents.append(float(-(post[post > 0] * np.log(post[post > 0])).sum()))
-            if stopped_at is None and (len(asked) >= mx or (len(asked) >= mn and overall >= conf)):
+            if stopped_at is None and (len(asked) >= mx or (len(asked) >= mn and current >= conf)):
                 stopped_at = len(asked)
-                final = (rec, overall, int(post.argmax()))
+                final = (rec, stated, int(post.argmax()))
                 if not full:
                     break
         if stopped_at is None:
             stopped_at = len(asked)
-            final = (rec, overall, int(post.argmax()))
+            final = (rec, stated, int(post.argmax()))
         earned = float(self.credit(final[0])[tau]) if tau is not None else 0.0
         return {"n": stopped_at, "conf": final[1], "right": (tau is not None and final[0] == tau), "earned": earned,
                 "class_right": bool(tau is not None and self.tcl[final[0]] == self.tcl[tau]), "mode": final[2], "confs": confs, "ents": ents, "asked": asked}
@@ -520,11 +524,11 @@ def build(cfg: Config, out: Path, quick: bool = False) -> dict:
                 "The normalizers ln Z<sub>q</sub>(τ) correct for how strongly each type prefers particular responses to a question. A test verifies this identity numerically. "
                 f"Before any answer the uncertainty is the entropy H = ln 27 = {math.log(27):.3f} nats. The confidence is measured for the specialization the scoring currently "
                 "recommends (class first, then specialization), even when the posterior's own maximum lies elsewhere, so the recommendation shown and the confidence stated always refer to the same specialization. "
-                "One visible consequence: when a new answer changes which specialization leads, the certainty meter can fall before it rises again.")]
+                "When a new answer changes which specialization leads, the current confidence can fall; section 8.11 explains why the figure the Oracle states never does.")]
     story += [P("The confidence is not only the probability of that one specialization. A person torn between the three specializations of one class, or between Protection Paladin and "
                 "Protection Warrior, has given the Oracle real information: it knows the class, or the role, even if it cannot yet name the specialization. So every type earns <b>credit</b> "
                 f"toward the confidence in the recommendation ŝ: 1 for ŝ itself, c = {ad.class_credit:g} for another specialization of its class, r = {ad.role_credit:g} for one that shares a role with it "
-                "(tank, healer, melee damage or ranged damage; Feral Combat counts as both a tank and melee damage), and the larger of the two when both apply. The confidence is the posterior's expected credit:"),
+                "(tank, healer, melee damage or ranged damage; Feral Combat counts as both a tank and melee damage), and the larger of the two when both apply. The raw confidence R is the posterior's expected credit:"),
               eq(r"C=\sum_{\tau}\pi(\tau\,|\,r_{1:n})\,K(\hat\tau,\tau)\qquad K(\hat\tau,\tau)=\max\left(1_{\tau=\hat\tau},\ c\,1_{\mathrm{same\ class}},\ r\,1_{\mathrm{shared\ role}}\right)")]
     _mdl = adaptive_mod.Model(c)
     _g = lambda cid, sid: next(sp.gidx for cl in c.classes if cl.id == cid for sp in cl.specs if sp.id == sid)
@@ -556,16 +560,18 @@ def build(cfg: Config, out: Path, quick: bool = False) -> dict:
     story += [table(rows, widths=[0.5 * inch, 0.9 * inch, 1.1 * inch, 1.6 * inch, 1.6 * inch]),
               P("<b>Table 10.</b> The eight most informative first questions (before any answer). The Oracle always opens with the first one; what it asks next depends on your answers.", SMALL)]
     story += [P("8.4&nbsp;&nbsp;When to stop", H2)]
-    story += [eq(r"\mathrm{stop\ when}\quad n\geq n_{\min}\ \ \mathrm{and}\ \ \pi\left(\hat\tau\,|\,r_{1:n}\right)\geq \theta\quad\mathrm{or}\quad n\geq n_{\max},\qquad \hat\tau=\mathrm{recommended\ specialization}")]
+    story += [eq(r"\mathrm{stop\ when}\quad n\geq n_{\min}\ \ \mathrm{and}\ \ \frac{n}{n+k}\,R_n\geq \theta\quad\mathrm{or}\quad n\geq n_{\max},\qquad R_n=\mathrm{confidence\ after\ }n\mathrm{\ answers}")]
     story += [table([["Setting", "Symbol", "Value", "Meaning"],
                      ["Minimum questions", "n<sub>min</sub>", "none" if ad.min_questions <= 1 else str(ad.min_questions), "never reveal earlier (1 means no minimum)"],
                      ["Maximum questions", "n<sub>max</sub>", str(ad.max_questions), "reveal anyway (a “Close call” is possible)"],
-                     ["Confidence threshold", "θ", pct(ad.confidence, 0), "confidence C the recommendation must reach"],
+                     ["Confidence threshold", "θ", pct(ad.confidence, 0), "scaled confidence the recommendation must reach"],
                      ["Class sharpness", "λ<sub>c</sub>", f"{ad.sharpness_class:g}", "how strongly class weights steer an answer"],
                      ["Specialization sharpness", "λ<sub>s</sub>", f"{ad.sharpness_spec:g}", "how strongly a profile steers an answer"],
                      ["Credit for the same class", "c", f"{ad.class_credit:g}", "weight of another specialization of the recommended class in the confidence"],
                      ["Credit for a similar role", "r", f"{ad.role_credit:g}", "weight of a specialization sharing a role with the recommended one"],
-                     ["Tiebreaker share", "m", pct(ad.tiebreak_mass, 0), "probability a tiebreaker's finalists must hold before it is asked"]],
+                     ["Tiebreaker share", "m", pct(ad.tiebreak_mass, 0), "probability a tiebreaker's finalists must hold before it is asked"],
+                     ["Question scaling", "k", f"{ad.question_scaling:g}", "the confidence counts for n / (n + k) after n questions (0 turns it off)"],
+                     ["Random opening", "", "on" if ad.random_opening else "off", "the first question is drawn at random from the personality questions"]],
                     widths=[1.7 * inch, 0.8 * inch, 0.8 * inch, WIDTH - 3.3 * inch], align_right_from=-1),
               P("<b>Table 11.</b> Confidence-mode settings (admin: Profiles & Settings).", SMALL)]
 
@@ -794,6 +800,38 @@ def build(cfg: Config, out: Path, quick: bool = False) -> dict:
                     f"A forced choice separates its finalists more sharply than a four-way question does (a mean of {np.mean(tb_ev):.1f} nats between finalists, against {np.mean(base_ev):.1f} for the comparable "
                     "within-class questions) because each answer is one of only two or three, and no weight was made heavier to get there.", SMALL)]
 
+    # ---- scaling by the number of questions asked
+    print("simulating the question scaling ...", flush=True)
+    n_k = 150 if n_sim < 100 else 800
+    rows = [["Respondents are", "k", "Mean questions", "Median", "Mean stated confidence", "Credit earned", "Exact specialization right"]]
+    for kcons in (1.0, 0.7, 0.5):
+        for kscale in (0.0, 0.3, 1.0):
+            scfg = cfg.model_copy(deep=True)
+            scfg.scoring.adaptive.question_scaling = kscale
+            ssim = Simulator(scfg)
+            strue = Simulator(scfg, sharp_spec=ad.sharpness_spec * kcons, sharp_class=ad.sharpness_class * kcons).p
+            r = cohort(ssim, n_k, 808, truth=strue)
+            rows.append([f"{pct(kcons, 0)} as consistent as assumed", f"{kscale:g}" + (" (default)" if abs(kscale - ad.question_scaling) < 1e-9 else ""), f"{r['mean_n']:.1f}",
+                         f"{r['median_n']:.0f}", pct(r["mean_conf"]), pct(r["earned"]), pct(r["accuracy"])])
+    story += [P("8.11&nbsp;&nbsp;Scaling the confidence by the number of questions asked", H2),
+              P("The probabilities of the model are most overconfident early. A person who is less consistent than the model assumes can look certain after three answers by chance, "
+                "and that is the situation in which the stated confidence misleads most. So the confidence counts for more as more questions are asked. After n answers it is scaled by "
+                f"n / (n + k), with k = {ad.question_scaling:g}: that is {100 * 1 / (1 + ad.question_scaling):.0f}% after one question, {100 * 5 / (5 + ad.question_scaling):.0f}% after five, "
+                f"{100 * 10 / (10 + ad.question_scaling):.0f}% after ten and {100 * 30 / (30 + ad.question_scaling):.0f}% after thirty. The Oracle stops when the scaled confidence reaches the threshold, "
+                "so a reading needs more raw certainty the sooner it wants to stop."),
+              eq(r"C_n=\frac{n}{n+k}\,R_n\qquad B_n=\frac{n}{n+k}\,\max_{m\leq n}R_m"),
+              P("The confidence the Oracle <b>states</b> is B<sub>n</sub>, the best certainty reached so far, scaled the same way. Because the best certainty never falls and n / (n + k) rises with every question, "
+                "B<sub>n</sub> rises with every question, even when a surprising answer lowers the current confidence C<sub>n</sub>. The stopping rule tests C<sub>n</sub>, not B<sub>n</sub>, so a reading "
+                "never stops on certainty it no longer has. Until C<sub>n</sub> reaches the threshold the stated figure is kept under it: from 80% up (ten points under the threshold) the scale is "
+                "compressed smoothly, by a hyperbolic tangent, toward a point one percentage point under the threshold, so the figure keeps rising without ever claiming a certainty the Oracle does not have. "
+                "The class, specialization and role odds shown beside it are the current ones, and can move either way, and a finished reading states C<sub>n</sub> itself."),
+              table(rows, widths=[1.5 * inch, 0.8 * inch, 0.75 * inch, 0.6 * inch, 0.85 * inch, 0.75 * inch, WIDTH - 5.25 * inch]),
+              P(f"<b>Table 22.</b> The effect of k, under the model, for {n_k} simulated respondents per row. Scaling asks more questions and earns more credit. At k = 1 no reading stops before about ten questions "
+                "(the scaling then needs a raw confidence of almost 1), the stated confidence is a little below what the readings earn for consistent respondents, and for inconsistent ones it comes closest to it.", SMALL),
+              P("<b>The first question.</b> Confidence mode opens with a question drawn at random from the personality questions (the thirty fixed-quiz questions and the class-separating ones), so that "
+                "two readings do not always begin the same way. After that every question is chosen by information gain as before. The most informative first question, which the interface does not use, "
+                "is always the same one.")]
+
     # ================================================================ 9 worked example
     print("worked example ...", flush=True)
     model = adaptive_mod.Model(c)
@@ -819,7 +857,7 @@ def build(cfg: Config, out: Path, quick: bool = False) -> dict:
               P("A fixed example respondent taking the quiz in confidence mode: a person of type Druid Feral Combat who always gives the response the model finds most likely for that type. "
                 "At each step the table shows which question the Oracle chose, the response, how much information it expected from it, and where the posterior stood after the answer."),
               table(rows, widths=[0.3 * inch, 0.7 * inch, 0.8 * inch, 0.85 * inch, 0.85 * inch, 1.65 * inch, 0.85 * inch, WIDTH - 6.0 * inch], align_right_from=-1, font=7.2),
-              P(f"<b>Table 22.</b> The example run stops after {fin.answered} questions with {pct(fin.confidence)} confidence in {fin.recommended.class_name} {fin.recommended.specialization_name}. "
+              P(f"<b>Table 23.</b> The example run stops after {fin.answered} questions with {pct(fin.confidence)} confidence in {fin.recommended.class_name} {fin.recommended.specialization_name}. "
                 "The five most probable types at the end:", SMALL)]
     rows = [["Type", "Probability"]] + [[f"{t.class_name} {t.specialization_name}", pct(t.probability, 2)] for t in fin.top]
     story += [table(rows, widths=[2.6 * inch, 1.2 * inch])]

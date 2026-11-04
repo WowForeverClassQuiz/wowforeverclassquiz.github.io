@@ -3,6 +3,15 @@
 The version shown on the first page is `APP_VERSION` in [app/version.py](app/version.py). The scoring rules carry their own
 `algorithm_version` (currently 1.7.0), which changes only when the arithmetic or the seed weights do.
 
+## 1.10.0 · 2026-11-04
+
+* **The confidence scales with the number of questions asked.** After n questions it counts for n / (n + 1) of what the model says: 50% after one question, 91% after ten, 97% after thirty. A reading therefore stops only on certainty that holds up, which in practice means about ten questions on average, and an inconsistent respondent is no longer told "90% sure" after three lucky answers. The scaling is the setting "Question scaling k" in Profiles & Settings (0 turns it off).
+* **The confidence the Oracle states rises with every question.** It is the best certainty reached so far, scaled by the number of questions, so a surprising answer can no longer make the meter fall. The stopping rule still tests the current certainty, so the Oracle never stops on certainty it has lost, and the figure stays a point below the threshold until it is truly reached. The class, specialization and role odds beside it show the current picture and can move either way. The Oracle reads 0% before the first answer.
+* **Confidence mode opens with a random personality question** (one of the thirty fixed-quiz questions or the class-separating ones) instead of always the same one. It is the setting "Open with a random personality question"; each question's "opener" flag can be changed through the API or an exported configuration.
+* **The role and distance questions (q49, q50) are subtler.** They now ask how you behave when people clash ("A family gathering turns into an argument. Where do you find yourself?") and whether you like to stay out of arm's reach of a conflict, and carry the same evidence about tanks, healers and melee and ranged damage as before.
+* **A prominent "Share my results!" button at the top of every result**, inside the hero. It opens the device's share sheet where there is one and otherwise copies the blurb to the clipboard, with links beside it to copy the text, post it on X or Reddit, or email it.
+* The scoring algorithm is 1.8.0, because the stopping rule and the opening question changed. Scores for the same answers are unchanged.
+
 ## 1.9.0 · 2026-11-04
 
 * **Tiebreaker questions (q75 to q103)**, asked only in confidence mode, force a decision between the finalists. There are seventeen for groups of three specializations (the three specializations of each class, and eight groups that share a role, such as the three tanks: "do you trust more in the light to guard, the structure and workmanship of steel, or the strength of the wild?" and, for a Paladin, "retribution, judgement or forgiveness?") and twelve two-way questions for the closest pairs of finalists.

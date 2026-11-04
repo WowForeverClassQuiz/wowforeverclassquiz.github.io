@@ -78,13 +78,13 @@ def test_with_both_credits_at_zero_the_confidence_is_the_specializations_probabi
     assert p.overall == pytest.approx(p.class_)                          # full class credit: the class's probability
 
 
-def test_the_status_reports_the_parts_and_the_confidence_is_never_below_the_specializations_probability(c):
+def test_the_status_reports_the_parts_of_the_current_confidence(c):
     answers = {}
     for _ in range(12):
         st = adaptive.status(c, answers)
         assert st.spec_probability == pytest.approx(st.recommended.probability)
-        assert st.confidence >= st.spec_probability - 1e-12 and st.class_probability >= st.spec_probability - 1e-12
-        assert st.role_probability >= st.spec_probability - 1e-12 and st.role and 0 <= st.confidence <= 1
+        assert st.class_probability >= st.spec_probability - 1e-12 and st.role_probability >= st.spec_probability - 1e-12
+        assert st.role and 0 <= st.confidence <= 1 and 0 <= st.current_confidence <= 1
         if st.done:
             break
         answers[st.next_question_id] = DRUID_ANSWERS.get(st.next_question_id) or c.questions[c.q_index[st.next_question_id]].answer_ids[0]
@@ -141,10 +141,12 @@ def test_evaluate_reports_the_same_parts_and_they_agree_with_the_status(cfg, c):
     ev = evaluate(cfg, DRUID_ANSWERS, include_explanation=False)
     conf = ev.result.confidence
     assert conf.role == "melee_damage_or_tank"
-    assert conf.probability <= conf.overall <= 1 and conf.probability <= conf.class_probability <= 1 and conf.probability <= conf.role_probability <= 1
+    factor = 30 / (30 + cfg.scoring.adaptive.question_scaling)
+    assert conf.question_factor == pytest.approx(factor, abs=1e-9) and 0 < conf.overall <= 1       # scaled by the 30 questions of the long quiz
+    assert conf.probability <= conf.class_probability <= 1 and conf.probability <= conf.role_probability <= 1
     strict = cfg.model_copy(deep=True)
     strict.scoring.adaptive.class_credit = strict.scoring.adaptive.role_credit = 0.0
-    assert evaluate(strict, DRUID_ANSWERS, include_explanation=False).result.confidence.overall == pytest.approx(conf.probability, abs=1e-9)
+    assert evaluate(strict, DRUID_ANSWERS, include_explanation=False).result.confidence.overall == pytest.approx(conf.probability * factor, abs=1e-9)
     assert math.isclose(conf.probability, adaptive.model_probability(c, [(c.q_index[q], c.questions[c.q_index[q]].answer_ids.index(a)) for q, a in DRUID_ANSWERS.items()]), abs_tol=1e-9)
 
 

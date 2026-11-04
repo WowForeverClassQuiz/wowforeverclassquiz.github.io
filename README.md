@@ -67,7 +67,7 @@ load, a coloured badge takes its place. To host them yourself or drop them, chan
 
 **Confidence mode** (the default) works like a twenty-questions game. After each answer the Oracle works out how likely each of the 27 pairs of class and specialization is,
 picks the unanswered question that will tell it the most, and stops as soon as its confidence in the specialization the scoring currently recommends has reached **90%**. There is no
-minimum number of questions, and it never asks more than 30. A certainty meter shows how sure it was when each question was put to you (it moves when you go on to the next question, not when you
+minimum number of questions, and it never asks more than 30. A certainty meter shows how sure it was when each question was put to you (it starts at 0%, rises with every question, and moves when you go on to the next question, not when you
 choose an answer), with the odds of the class, the specialization and the role beside it, and you can also *Reveal now* at whatever certainty
 it has reached. The result then says which mode it was, how many questions it rests on and the model's confidence ("93% sure"). Simulated respondents need about 6
 questions on average (a median of 5, and 9 or fewer for nine in ten); people who answer at random run to the limit about a third of the time and get a lower confidence
@@ -77,6 +77,13 @@ and a weaker label.
   to that type's scores). Bayes' rule over the 27 types then gives the probabilities; the quiz's own class and specialization scores *are* the evidence in it. The
   "probabilities" are exact inside the model, and the model is an assumption about how people answer (its two sharpness constants say how consistently). Read
   "90% sure" as "the answers are as consistent with one specialization as the model requires"; no study of real respondents backs the figure.
+* **The first question and the pace.** The first question is drawn at random from the personality questions (the thirty fixed-quiz questions and the class-separating ones), so two readings do not
+  begin the same way; after that every question is chosen by information gain. The confidence is scaled by the number of questions asked: after n questions it counts for n / (n + k) of what the
+  model says (k = 1 by default: 50% after one question, 91% after ten, 97% after thirty), so a reading needs about ten questions on average and an inconsistent respondent is not told "90% sure"
+  after three lucky answers. The figure the Oracle states while it asks is the best certainty reached so far, scaled the same way, so it rises with every question even when a surprising answer
+  lowers the current certainty (the stopping rule tests the current one, and a finished reading states it). Near the threshold it is compressed smoothly so it never claims 90% before the Oracle has it.
+  Both the scaling (Profiles & Settings, "Question scaling k", 0 turns it off) and the random opening can be changed. In simulation, for respondents 70% as consistent as the model assumes, k = 1 makes the reading exactly right 98.5% of the time
+  against 86.0% without the scaling, at the cost of about five more questions (11.7 against 6.2); the stated 91% is then a little below what the readings earn.
 * **What "sure" means.** The confidence is not only the probability of one specialization. Every type earns credit toward the recommendation: 1 for the recommended specialization,
   half for another specialization of its class and half for one with a similar role (tank, healer, melee damage or ranged damage), the larger of the two when both apply. A person whose three Mage
   specializations are all gaining, or who sits between Protection Paladin and Protection Warrior, therefore reaches 90% sooner. The probabilities of the specialization, the class and the role are shown
@@ -118,8 +125,10 @@ and a weaker label.
   guide and its build. Page through with *Previous* and *Next* or the left and right arrow keys. The **Also in the stars** cards on a result open the page of the
   runner-up specialization and of your next-closest specialization in your class. Pages are served by `GET /api/v1/specializations/{class}/{spec}` and are
   carried in the static site's data.
-* **Share your result.** The result page has a *Share your result* box: a short blurb with your class, specialization, your three best class scores and a link
-  to the quiz, which *Copy to share* puts on the clipboard (and *Share…* opens the phone's share sheet where there is one). An administrator can change the wording
+* **Share your result.** At the top of the result page, inside the hero, is a prominent **Share my results!** button. It opens the device's share sheet where there is one (phones, and
+  Safari and Edge on desktop) and otherwise copies the blurb to the clipboard; beside it are *Copy the text* and links that post the blurb on X, Reddit or in an email (the blurb goes to those sites
+  only when you click, and the quiz itself still sends nothing). Further down, a *Share your result* box shows the blurb: a short text with your class, specialization, your three best class scores and a link
+  to the quiz, which *Copy to share* puts on the clipboard (and *Share…* opens the share sheet). An administrator can change the wording
   in **Admin > Profiles > Share format**: write the text you like and put `{placeholders}` where details of the result should go (`{class}`, `{spec}`,
   `{spec_score}`, `{class_scores}`, `{traits}`, `{confidence}`, `{questions}`, `{quiz_length}`, `{also_class}`, `{also_spec}`, `{next_spec}`, `{title}`, `{link}`);
   a live preview uses a sample result. The format is saved with the configuration (`quiz.share_template`), so it is exported, imported and published with the
@@ -437,7 +446,7 @@ most points and the build's role must fit the specialization.
 pytest
 ```
 
-342 automated tests cover scoring (normalization, ties, determinism, weight edits), the API (privacy of
+357 automated tests cover scoring (normalization, ties, determinism, weight edits), the API (privacy of
 `/quiz`, edits, persistence across restart, simulation purity, revision conflicts, import, export and reset),
 build validation (51 points, ranks, prerequisites, role consistency, verification rules), the draft talent catalog and the 27 draft builds
 with their installer, the guides, drawn talent trees and icons that the result page shows, the **balance** of the seed quiz at each length (`tests/test_balance.py`), the short, medium and long quizzes (`tests/test_lengths.py`), the share format and the specialization pages (`tests/test_share.py`, `tests/test_spec_pages.py`), the version stamp (`tests/test_version.py`), confidence mode and its browser twin (`tests/test_adaptive.py`), the confidence-mode-only questions (`tests/test_extra_questions.py`, `tests/test_class_questions.py`), the class and role credit in the confidence (`tests/test_confidence_credit.py`), the tiebreakers (`tests/test_tiebreakers.py`), the maths PDF (`tests/test_math_pdf.py`), and the **static edition**: the JavaScript engine against

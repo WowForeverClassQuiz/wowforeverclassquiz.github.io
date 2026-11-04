@@ -67,7 +67,7 @@ def validate_config(config: Config) -> list[str]:
         errors.append("adaptive.min_questions cannot exceed adaptive.max_questions.")
     if ad.min_questions > pool:
         errors.append(f"adaptive.min_questions ({ad.min_questions}) exceeds the {pool} enabled questions.")
-    if not all(math.isfinite(x) for x in (ad.confidence, ad.sharpness_class, ad.sharpness_spec, ad.class_credit, ad.role_credit, ad.tiebreak_mass)):
+    if not all(math.isfinite(x) for x in (ad.confidence, ad.sharpness_class, ad.sharpness_spec, ad.class_credit, ad.role_credit, ad.tiebreak_mass, ad.question_scaling)):
         errors.append("adaptive settings must be finite numbers.")
     margins = config.scoring.confidence_margins
     if margins.strong < margins.moderate:

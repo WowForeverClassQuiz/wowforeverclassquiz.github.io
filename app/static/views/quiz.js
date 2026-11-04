@@ -190,7 +190,9 @@ async function beginAdaptive() {
   try {
     state.status = await post("/adaptive/next", { answers: askedAnswers() });
     state.statusFor = answersKey();
-    const next = state.status.next_question_id;
+    let next = state.status.next_question_id;
+    const openers = state.status.openers || [];
+    if (state.status.answered === 0 && openers.length) next = openers[Math.floor(Math.random() * openers.length)];      // a random personality question to open with
     if (next && !state.asked.includes(next)) { state.asked.push(next); state.meter[next] = state.status; }
   } catch (err) {
     state.started = false; toast(err.message || "Could not reach the Oracle.", "bad");
@@ -210,7 +212,7 @@ function certainty(i, s) {
     s && s.answered > 0 ? h("p", { class: "muted certainty-detail", id: "certainty-detail", title: "How likely the Oracle's model thinks each is right, given your answers so far" },
       `${s.recommended.class_name} ${Math.round(s.class_probability * 100)}% · ${s.recommended.specialization_name} ${Math.round(s.spec_probability * 100)}% · ${roleLabel(s.role)} ${Math.round(s.role_probability * 100)}%`) : null,
     s ? h("p", { class: "muted certainty-note" },
-      `It asks the questions that tell it the most and stops once it is ${Math.round(s.threshold * 100)}% sure${s.min_questions > 1 ? `, after at least ${s.min_questions} questions` : ""} (${s.max_questions} at most). A specialization of the same class, or with a similar role, counts partly toward that.`) : null);
+      `It asks the questions that tell it the most and stops once it is ${Math.round(s.threshold * 100)}% sure${s.min_questions > 1 ? `, after at least ${s.min_questions} questions` : ""} (${s.max_questions} at most). The figure only rises: it is the best certainty reached so far, counted for more as more questions are asked. A specialization of the same class, or with a similar role, counts partly toward it.`) : null);
 }
 
 function drawAdaptiveQuestion() {
@@ -460,6 +462,27 @@ function shareText(r) {
   return renderShare(state.quiz.share_template || DEFAULT_SHARE_TEMPLATE, shareValues(r, { link: pageUrl(), title: state.quiz.title }));
 }
 
+/** A prominent share button at the top of the result: the device's share sheet where there is one, otherwise the clipboard, with a few common places beside it. */
+function shareBar(r) {
+  const text = shareText(r), url = pageUrl(), title = state.quiz.title;
+  const copy = async () => toast((await copyText(text)) ? "Copied. Paste it anywhere to share your result." : "Copy failed: select the text in the share box below and copy it by hand.", "ok");
+  const share = async () => {
+    if (typeof navigator !== "undefined" && navigator.share) {
+      try { await navigator.share(text.includes(url) ? { title, text } : { title, text, url }); return; } catch (err) { if (err && err.name === "AbortError") return; }
+    }
+    await copy();
+  };
+  const enc = encodeURIComponent;
+  const place = (label, href, id) => h("a", { class: "share-place", id, href, target: "_blank", rel: "noopener noreferrer" }, label);
+  return h("div", { class: "share-top", id: "share-top" },
+    h("button", { class: "btn primary large", type: "button", id: "share-main", onclick: share }, "Share my results!"),
+    h("div", { class: "share-more" },
+      h("button", { class: "linkish", type: "button", id: "share-top-copy", onclick: copy }, "Copy the text"),
+      place("Post on X", `https://x.com/intent/post?text=${enc(text)}`, "share-x"),
+      place("Reddit", `https://www.reddit.com/submit?title=${enc(`${title}: Forever Character Oracle`)}&url=${enc(url)}`, "share-reddit"),
+      place("Email", `mailto:?subject=${enc(`${title}: Forever Character Oracle`)}&body=${enc(text)}`, "share-email")));
+}
+
 function shareCard(r) {
   const text = shareText(r);
   const copy = async () => toast((await copyText(text)) ? "Copied. Paste it anywhere to share your result." : "Copy failed: select the text and copy it by hand.", "ok");
@@ -521,6 +544,7 @@ function drawResult() {
         ? h("p", { class: "muted", id: "confidence-detail", style: { fontSize: "0.88rem", margin: "10px 0 0" } },
           `The model gives ${p.primary_class.name} ${Math.round(p.confidence.class_probability * 100)}%, ${p.primary_specialization.name} ${Math.round(p.confidence.probability * 100)}% and ${roleLabel(p.confidence.role)} ${Math.round(p.confidence.role_probability * 100)}%.`)
         : null,
+      shareBar(r),
     ),
     h("div", { class: "card prose" }, h("h3", {}, "Your temperament"), h("p", {}, p.personality_interpretation)),
     overviewCard({ className: p.primary_class.name, classOverview: p.class_overview, specName: p.primary_specialization.name, specOverview: p.specialization_overview, url: p.overview_url }),

@@ -141,9 +141,9 @@ def _read_config(conn) -> Config:
     questions = [
         {"id": r["id"], "text": r["text"], "enabled": bool(r["enabled"]), "type": r["type"],
          "low_label": r["low_label"], "high_label": r["high_label"], "rationale": r["rationale"],
-         "min_length": r["min_length"], "finalists": json.loads(r["finalists"] or "[]"), "answers": answers[r["id"]]}
+         "min_length": r["min_length"], "finalists": json.loads(r["finalists"] or "[]"), "opener": bool(r["opener"]), "answers": answers[r["id"]]}
         for r in conn.execute(
-            "SELECT id, text, enabled, type, low_label, high_label, rationale, min_length, finalists FROM questions ORDER BY display_order"
+            "SELECT id, text, enabled, type, low_label, high_label, rationale, min_length, finalists, opener FROM questions ORDER BY display_order"
         )
     ]
 
@@ -208,9 +208,9 @@ def _write_config(conn, cfg: Config) -> None:
             )
     for qi, q in enumerate(cfg.questions):
         conn.execute(
-            "INSERT INTO questions (id, text, display_order, enabled, type, low_label, high_label, rationale, min_length, finalists) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?)",
-            (q.id, q.text, qi, int(q.enabled), q.type, q.low_label, q.high_label, q.rationale, q.min_length, json.dumps(q.finalists)),
+            "INSERT INTO questions (id, text, display_order, enabled, type, low_label, high_label, rationale, min_length, finalists, opener) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            (q.id, q.text, qi, int(q.enabled), q.type, q.low_label, q.high_label, q.rationale, q.min_length, json.dumps(q.finalists), int(q.opener)),
         )
         for ai, a in enumerate(q.answers):
             conn.execute("INSERT INTO answers VALUES (?,?,?,?)", (q.id, a.id, a.text, ai))
@@ -431,7 +431,7 @@ class Repository:
             q = cfg.get_question(qid)
             if q is None:
                 raise NotFoundError("question", qid)
-            fields = ("text", "enabled", "low_label", "high_label", "rationale", "min_length", "finalists")
+            fields = ("text", "enabled", "low_label", "high_label", "rationale", "min_length", "finalists", "opener")
             before = {f: getattr(q, f) for f in fields}
             for f in fields:
                 value = getattr(patch, f)

@@ -306,6 +306,10 @@ class Question(Strict):
             "'adaptive' marks a question that only confidence mode asks."
         ),
     )
+    opener: bool = Field(
+        default=False,
+        description="Confidence mode may open with this question: the first question is drawn at random from the questions marked as openers (the personality questions).",
+    )
     finalists: list[SpecKey] = Field(
         default_factory=list, max_length=8,
         description=(
@@ -371,6 +375,17 @@ class AdaptiveSettings(Strict):
     role_credit: float = Field(
         default=0.5, ge=0, le=1,
         description="How much probability on a specialization with a similar role (tank, healer, melee damage, ranged damage) counts toward the confidence.",
+    )
+    question_scaling: float = Field(
+        default=1.0, ge=0, le=10,
+        description=(
+            "The confidence is scaled by n / (n + question_scaling) for n questions asked, so the same certainty counts for less after three questions "
+            "than after twenty. At 1 a reading needs about ten questions; 0 turns the scaling off."
+        ),
+    )
+    random_opening: bool = Field(
+        default=True,
+        description="Confidence mode opens with a question drawn at random from the questions marked as openers (the personality questions), not always the most informative one.",
     )
     tiebreak_mass: float = Field(
         default=0.8, gt=0, le=1,
@@ -564,9 +579,13 @@ class AdaptiveStatus(BaseModel):
     max_questions: int
     threshold: float
     confidence: float = Field(
-        description="The Oracle's confidence in the recommendation: the model's probability for the recommended specialization, plus partial credit "
-                    "(class_credit, role_credit) for probability on other specializations of its class or with a similar role."
+        description="The Oracle's stated confidence in the recommendation. It is the best certainty reached so far (the model's probability for the recommended "
+                    "specialization plus partial credit for its class and role), scaled by the number of questions asked, so it rises with every question."
     )
+    current_confidence: float = Field(
+        description="The same measure for the answers as they stand now. The stopping rule tests this one; the stated confidence can be higher, because it never falls."
+    )
+    question_factor: float = Field(description="The scaling n / (n + question_scaling) for the number of questions asked so far (0 before the first answer).")
     spec_probability: float = Field(description="Probability the model gives the specialization the scoring currently recommends.")
     class_probability: float = Field(description="Probability the model gives the recommended class (all of its specializations).")
     role_probability: float = Field(description="Probability the model gives specializations with a role like the recommended one's (any class).")
@@ -581,6 +600,10 @@ class AdaptiveStatus(BaseModel):
     can_reveal: bool = Field(description="True once the minimum number of questions has been answered.")
     next_question_id: Optional[str] = None
     expected_gain: Optional[float] = Field(default=None, description="Expected reduction of the uncertainty (nats) from the next question.")
+    openers: list[str] = Field(
+        default_factory=list,
+        description="Before the first answer, when random_opening is on: the questions the quiz may open with. A client draws one at random; next_question_id is the most informative question.",
+    )
 
 
 # --------------------------------------------------------------------------
@@ -710,8 +733,9 @@ class Confidence(BaseModel):
     role_probability: Optional[float] = Field(default=None, description="Probability the model gives specializations with a role like the recommended one's.")
     overall: Optional[float] = Field(
         default=None,
-        description="The confidence the Oracle states: the specialization's probability plus partial credit for the same class and for a similar role.",
+        description="The confidence the Oracle states: the specialization's probability plus partial credit for the same class and for a similar role, scaled by the number of questions asked.",
     )
+    question_factor: Optional[float] = Field(default=None, description="The scaling n / (n + question_scaling) applied for the number of questions answered.")
     role: Optional[str] = Field(default=None, description="The role of the recommended specialization.")
     class_gap: float
     strong_margin: float
@@ -947,6 +971,7 @@ class QuestionPatch(Strict):
     rationale: Optional[LongText] = None
     min_length: Optional[QuestionTier] = None
     finalists: Optional[list[SpecKey]] = Field(default=None, max_length=8)
+    opener: Optional[bool] = None
 
 
 class QuizPatch(Strict):

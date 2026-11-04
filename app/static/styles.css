@@ -250,6 +250,11 @@ tfoot td { font-weight: 700; background: var(--surface-2); }
 .result-hero h1 { font-size: clamp(2.4rem, 7vw, 3.8rem); margin: 6px 0 0; }
 .result-hero h2 { font-size: clamp(1.4rem, 4vw, 2rem); color: var(--text-2); font-weight: 500; margin: 2px 0 14px; }
 .chips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.share-top { margin-top: 22px; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.share-top .btn.large { min-width: min(100%, 320px); box-shadow: 0 6px 20px rgba(98, 80, 214, 0.28); }
+.share-more { display: flex; flex-wrap: wrap; gap: 6px 16px; justify-content: center; align-items: center; font-size: 0.92rem; }
+.share-place { color: var(--text-2); text-decoration: underline; text-underline-offset: 3px; }
+.share-place:hover { color: var(--text); }
 .chip { display: inline-flex; gap: 6px; align-items: baseline; padding: 4px 12px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--border); font-size: 0.9rem; }
 .chip b { font-weight: 600; }
 .chip i { font-style: normal; color: var(--text-3); font-size: 0.8rem; font-variant-numeric: tabular-nums; }

@@ -148,7 +148,7 @@ def test_the_adaptive_order_needs_fewer_questions_than_the_quiz_order():
 def test_the_status_before_any_answer_asks_the_most_informative_question(c):
     st = adaptive.status(c, {})
     assert st.answered == 0 and not st.done and st.next_question_id and not st.can_reveal
-    assert math.isclose(st.spec_probability, 1 / 27) and 1 / 27 <= st.confidence < 0.5 and st.threshold == 0.9 and (st.min_questions, st.max_questions) == (1, 30)
+    assert math.isclose(st.spec_probability, 1 / 27) and st.confidence == 0.0 and st.question_factor == 0.0 and st.threshold == 0.9 and (st.min_questions, st.max_questions) == (1, 30)
 
 
 def test_a_clear_respondent_is_told_to_stop_as_soon_as_the_oracle_is_sure(c, feral):
