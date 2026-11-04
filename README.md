@@ -177,6 +177,9 @@ not affiliated with Blizzard.
 * **Edits need a rebuild.** The site is a snapshot. To publish changes made in the local admin dashboard, export them
   (*Admin > Configuration > Export*) and build from the export: `python tools/build_static.py --config exported.json`.
 * **Builds are the draft builds** described above, labelled as such on the result page.
+* **After a deploy, only the page itself can be stale.** GitHub Pages lets browsers keep files for ten minutes. Every file the page loads (the styles, each script module and
+  the quiz data) is therefore requested with a hash of the build (`?v=...`), so a browser never mixes new data with old code. `index.html` can still be up to ten minutes
+  old; the build number in its footer shows which version you are looking at.
 
 ### Putting it on GitHub Pages (free)
 
@@ -419,11 +422,11 @@ most points and the build's role must fit the specialization.
 pytest
 ```
 
-307 automated tests cover scoring (normalization, ties, determinism, weight edits), the API (privacy of
+310 automated tests cover scoring (normalization, ties, determinism, weight edits), the API (privacy of
 `/quiz`, edits, persistence across restart, simulation purity, revision conflicts, import, export and reset),
 build validation (51 points, ranks, prerequisites, role consistency, verification rules), the draft talent catalog and the 27 draft builds
 with their installer, the guides, drawn talent trees and icons that the result page shows, the **balance** of the seed quiz at each length (`tests/test_balance.py`), the short, medium and long quizzes (`tests/test_lengths.py`), the share format and the specialization pages (`tests/test_share.py`, `tests/test_spec_pages.py`), the version stamp (`tests/test_version.py`), confidence mode and its browser twin (`tests/test_adaptive.py`), the twenty confidence-mode-only questions (`tests/test_extra_questions.py`), the maths PDF (`tests/test_math_pdf.py`), and the **static edition**: the JavaScript engine against
-the Python engine and the live API (`tests/test_static_parity.py`, needs `node`, skipped without it) and the site builder
+the Python engine and the live API (`tests/test_static_parity.py`, needs `node`, skipped without it) and the site builder, including its cache stamping
 (`tests/test_build_static.py`).
 
 The interface tests need a browser; paste a script into the browser console:

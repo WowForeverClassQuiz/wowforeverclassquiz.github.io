@@ -25,7 +25,8 @@ export class ApiError extends Error {
 let staticReady = null;
 function loadStatic() {
   staticReady ||= (async () => {
-    const [engine, res] = await Promise.all([import("./engine.js"), fetch(new URL("data/oracle.json", document.baseURI))]);
+    const build = document.querySelector('meta[name="oracle-build"]')?.content;          // written by tools/build_static.py: browsers fetch the data that matches this code
+    const [engine, res] = await Promise.all([import("./engine.js"), fetch(new URL(`data/oracle.json${build ? `?v=${build}` : ""}`, document.baseURI))]);
     if (!res.ok) throw new ApiError(res.status, { message: `The quiz data could not be loaded (HTTP ${res.status}).` });
     const data = await res.json();
     return { engine, data, compiled: engine.prepare(data) };

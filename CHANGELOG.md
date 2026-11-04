@@ -3,6 +3,10 @@
 The version shown on the first page is `APP_VERSION` in [app/version.py](app/version.py). The scoring rules carry their own
 `algorithm_version` (currently 1.5.0), which changes only when the arithmetic or the seed weights do.
 
+## 1.7.1 · 2026-11-04
+
+* Published sites no longer serve stale files after a deploy. Every file the page loads (styles, scripts, quiz data) is requested with a hash of the build, so a browser that cached the previous version fetches the new files and never mixes new data with old code. The page itself can still be up to ten minutes old.
+
 ## 1.7.0 · 2026-11-03
 
 * **No minimum number of questions** in confidence mode: the Oracle stops as soon as it is 90% sure of one specialization, and still never asks more than 30. An administrator can set a minimum in Profiles & Settings.
